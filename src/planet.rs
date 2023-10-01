@@ -1,6 +1,6 @@
 use std::ops::{AddAssign, SubAssign};
 
-use bevy::prelude::*;
+use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
 use bevy_inspector_egui::{prelude::ReflectInspectorOptions, InspectorOptions};
 
 use crate::MouseDot;
@@ -32,6 +32,79 @@ impl SubAssign for Acceleration {
 #[derive(Component, Resource, Default, Reflect, InspectorOptions)]
 #[reflect(Resource, InspectorOptions)]
 pub struct Drag(#[inspector(min = 0.0, max = 1.0)] pub f32);
+
+pub struct PlanetsPlugin;
+
+impl Plugin for PlanetsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, spawn_planets)
+            .add_systems(
+                Update,
+                (
+                    drag_system,
+                    nbody_system,
+                    mouse_attraction_system,
+                    player_bounds_system,
+                ),
+            )
+            .add_systems(PostUpdate, (physics_system,));
+    }
+}
+
+fn spawn_planets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    const N: usize = 100;
+    for i in 0..N {
+        let i = i as f32 / N as f32;
+        let jitter = Vec3::new(
+            100.0 * (i * 19251.352 - 5.32).sin(),
+            100.0 * (i * 13526.221).cos(),
+            0.0,
+        );
+
+        const DRAG: f32 = 0.01;
+
+        let mass = 50.0 * (1.0 - (i * 16236.0).sin().abs()) + 2.0;
+
+        commands.spawn((
+            Planet,
+            Name::new("Planet"),
+            Mass(mass),
+            Velocity(0.025 * jitter),
+            Acceleration(Vec3::splat(0.0)),
+            Drag(0.01 + DRAG + (DRAG * (15000.0 * i).sin())),
+            PbrBundle {
+                mesh: meshes.add(shape::Icosphere::default().try_into().unwrap()),
+                material: materials.add(StandardMaterial::from(Color::Hsla {
+                    hue: 360.0 * i,
+                    saturation: 0.5,
+                    lightness: 0.5,
+                    alpha: 1.0,
+                })),
+                transform: Transform::from_translation(jitter + Vec3 { z: i, ..default() })
+                    .with_scale(3.0 * Vec3::splat(mass.cbrt())),
+                ..default()
+            },
+        ));
+    }
+}
+
+fn physics_system(mut query: Query<(&mut Transform, &mut Velocity, &mut Acceleration)>) {
+    for (mut pos, mut vel, mut acc) in &mut query {
+        vel.0 += acc.0;
+        pos.translation += vel.0;
+        *acc = Acceleration(Vec3::ZERO)
+    }
+}
+
+fn drag_system(mut query: Query<(&mut Velocity, &Drag)>) {
+    for (mut vel, Drag(drag)) in &mut query {
+        vel.0 *= 1.0 - *drag;
+    }
+}
 
 fn attraction_force(
     sat_mass: f32,
@@ -82,5 +155,36 @@ pub fn mouse_attraction_system(
         *acc += Acceleration(
             attraction_force(mass, player_pos, MOUSE_DOT_MASS, mouse_pos, GRAV_CONST) / mass,
         );
+    }
+}
+
+fn player_bounds_system(
+    mut q_player: Query<(&mut Transform, &mut Velocity), With<Planet>>,
+    q_windows: Query<&Window, With<PrimaryWindow>>,
+) {
+    let Ok(win) = q_windows.get_single() else { return };
+    let win = Rect::new(
+        -win.width() / 2.0,
+        -win.height() / 2.0,
+        win.width() / 2.0,
+        win.height() / 2.0,
+    );
+    for (mut transform, mut vel) in &mut q_player {
+        let mut pos = transform.translation;
+        if win.contains(pos.xy()) {
+            continue;
+        }
+
+        if !(win.min.x..win.max.x).contains(&pos.x) {
+            pos.x = pos.x.clamp(win.min.x, win.max.x);
+            vel.0.x *= -1.0;
+        }
+
+        if !(win.min.y..win.max.y).contains(&pos.y) {
+            pos.y = pos.y.clamp(win.min.y, win.max.y);
+            vel.0.y *= -1.0;
+        }
+
+        transform.translation = pos;
     }
 }
