@@ -20,11 +20,18 @@ fn main() {
         .run();
 }
 
+/// Used to help identify our main camera
+#[derive(Component)]
+struct MainCamera;
+
 fn init_camera(mut commands: Commands) {
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 0.0, 1000.0).looking_at(Vec3::splat(0.0), Vec3::Y),
-        ..Default::default()
-    });
+    commands.spawn((
+        MainCamera,
+        Camera3dBundle {
+            transform: Transform::from_xyz(0.0, 0.0, 1000.0).looking_at(Vec3::splat(0.0), Vec3::Y),
+            ..Default::default()
+        },
+    ));
 }
 
 #[derive(Resource, Default, Reflect, InspectorOptions)]
@@ -98,14 +105,26 @@ fn spawn(
 fn mouse_pos_update_system(
     mut q_mouse_dot: Query<&mut Transform, With<MouseDot>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
+    camera_q: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) {
     let mouse_dot_pos = &mut q_mouse_dot.single_mut().translation;
-    let Ok(win) = q_windows.get_single() else { return };
-    let Some(cursor_pos) = win.cursor_position() else { return };
-    *mouse_dot_pos = cursor_pos.extend(0.0);
-    mouse_dot_pos.y *= -1.0;
-    mouse_dot_pos.x -= win.width() / 2.0;
-    mouse_dot_pos.y += win.height() / 2.0;
+
+    // get the camera info and transform
+    // assuming there is exactly one main camera entity, so query::single() is OK
+    let (camera, camera_transform) = camera_q.single();
+
+    // get the window that the camera is displaying to (or the primary window)
+    let window = q_windows.single();
+
+    // check if the cursor is inside the window and get its position
+    // then, ask bevy to convert into world coordinates, and truncate to discard Z
+    if let Some(world_position) = window
+        .cursor_position()
+        .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
+        .and_then(|ray| Some(ray.get_point(ray.intersect_plane(Vec3::X, Vec3::Z)?)))
+    {
+        *mouse_dot_pos = world_position;
+    }
 }
 
 fn spawn_debug_lines_system(
