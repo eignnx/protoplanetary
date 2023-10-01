@@ -1,12 +1,15 @@
 use std::ops::{AddAssign, SubAssign};
 
-use bevy::{math::Vec3Swizzles, prelude::*};
+use bevy::prelude::*;
 use bevy_inspector_egui::{prelude::ReflectInspectorOptions, InspectorOptions};
 
 use crate::MouseDot;
 
 #[derive(Component)]
 pub struct Planet;
+
+#[derive(Component, Clone, Copy, Default)]
+pub struct Mass(pub f32);
 
 #[derive(Component, Clone, Copy, Default)]
 pub struct Velocity(pub Vec3);
@@ -30,50 +33,54 @@ impl SubAssign for Acceleration {
 #[reflect(Resource, InspectorOptions)]
 pub struct Drag(#[inspector(min = 0.0, max = 1.0)] pub f32);
 
-fn attraction_acceleration(
+fn attraction_force(
+    sat_mass: f32,
     sat_pos: Vec3,
     parent_mass: f32,
     parent_pos: Vec3,
     grav_const: f32,
-) -> Acceleration {
+) -> Vec3 {
+    const MIN_DIST: f32 = 0.5;
     let sat_to_parent = parent_pos - sat_pos;
     let toward_parent = sat_to_parent.normalize_or_zero();
-    Acceleration(grav_const * parent_mass * toward_parent / (sat_to_parent.length_squared() + 0.1))
+    grav_const * sat_mass * parent_mass * toward_parent
+        / (sat_to_parent.length_squared() + MIN_DIST)
 }
 
-const GRAV_CONST: f32 = 10.0;
-pub fn nbody_system(mut planets_mut: Query<(&Transform, &mut Acceleration), With<Planet>>) {
-    let mut bodies = Vec::<(&Transform, Mut<Acceleration>)>::new();
+const GRAV_CONST: f32 = 0.2;
 
-    for (p1_trans, mut p1_acc) in planets_mut.iter_mut() {
-        p1_acc.0 = Vec3::ZERO;
-        for (p2_trans, p2_acc) in bodies.iter_mut() {
-            let acc = attraction_acceleration(
-                p1_trans.translation,
-                10.0,
-                p2_trans.translation,
-                GRAV_CONST,
-            );
-            *p1_acc += acc;
-            **p2_acc -= acc;
-        }
-        bodies.push((p1_trans, p1_acc));
+pub fn nbody_system(mut planets_mut: Query<(&Transform, &Mass, &mut Acceleration), With<Planet>>) {
+    let mut it = planets_mut.iter_combinations_mut();
+    while let Some([(p1_trans, m1, mut p1_acc), (p2_trans, m2, mut p2_acc)]) = it.fetch_next() {
+        let force = attraction_force(
+            m1.0,
+            p1_trans.translation,
+            m2.0,
+            p2_trans.translation,
+            GRAV_CONST,
+        );
+        *p1_acc += Acceleration(force / m1.0);
+        *p2_acc -= Acceleration(force / m2.0);
     }
 }
 
 pub fn mouse_attraction_system(
     mouse_input: Res<Input<MouseButton>>,
-    mut q_player: Query<(&Transform, &mut Acceleration), With<Planet>>,
+    mut q_player: Query<(&Transform, &Mass, &mut Acceleration), With<Planet>>,
     q_mouse: Query<&Transform, With<MouseDot>>,
 ) {
     if !mouse_input.pressed(MouseButton::Left) {
         return;
     }
 
+    const MOUSE_DOT_MASS: f32 = 2000.0;
+
     let mouse_pos = q_mouse.single().translation;
-    for (player_pos, mut acc) in &mut q_player {
+
+    for (player_pos, &Mass(mass), mut acc) in &mut q_player {
         let player_pos = player_pos.translation;
-        const MOUSE_DOT_MASS: f32 = 150.0;
-        *acc = attraction_acceleration(player_pos, MOUSE_DOT_MASS, mouse_pos, GRAV_CONST);
+        *acc += Acceleration(
+            attraction_force(mass, player_pos, MOUSE_DOT_MASS, mouse_pos, GRAV_CONST) / mass,
+        );
     }
 }

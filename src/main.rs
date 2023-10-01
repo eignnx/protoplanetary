@@ -4,12 +4,11 @@ use bevy_inspector_egui::{
 };
 use planet::{mouse_attraction_system, nbody_system, Drag};
 
-use crate::planet::{Acceleration, Planet, Velocity};
+use crate::planet::{Acceleration, Mass, Planet, Velocity};
 
 mod planet;
 
 const BACKGROUND_COLOR: Color = Color::rgb(0.1, 0.01, 0.02);
-const BALL_SIZE: Vec3 = Vec3::new(10., 10., 0.);
 const BALL_STARTING_POSITION: Vec3 = Vec3::new(0.0, 0.0, 0.0);
 
 fn main() {
@@ -63,13 +62,17 @@ fn spawn_player(
             0.0,
         );
 
-        const DRAG: f32 = 0.05;
+        const DRAG: f32 = 0.01;
+
+        let mass = 50.0 * (1.0 - (i * 16236.0).sin().abs()) + 2.0;
+
         commands.spawn((
             Planet,
             Name::new("Planet"),
+            Mass(mass),
             Velocity(0.025 * jitter),
             Acceleration(Vec3::splat(0.0)),
-            Drag(0.02 + DRAG + (DRAG * (15000.0 * i).sin())),
+            Drag(0.01 + DRAG + (DRAG * (15000.0 * i).sin())),
             PbrBundle {
                 mesh: meshes.add(shape::Icosphere::default().try_into().unwrap()),
                 material: materials.add(StandardMaterial::from(Color::Hsla {
@@ -81,7 +84,7 @@ fn spawn_player(
                 transform: Transform::from_translation(
                     BALL_STARTING_POSITION + jitter + Vec3 { z: i, ..default() },
                 )
-                .with_scale(i * BALL_SIZE + BALL_SIZE / 10.0 + 2.0),
+                .with_scale(3.0 * Vec3::splat(mass.cbrt())),
                 ..default()
             },
         ));
@@ -90,13 +93,21 @@ fn spawn_player(
     commands.spawn((
         MouseDot,
         Name::new("Mouse Dot"),
-        Transform::from_translation(BALL_STARTING_POSITION),
-        // MaterialMesh2dBundle {
-        //     mesh: meshes.add(shape::Circle::new(5.0).into()).into(),
-        //     material: materials.add(ColorMaterial::from(Color::WHITE)),
-        //     transform:
-        //     ..default()
-        // },
+        PbrBundle {
+            mesh: meshes.add(
+                shape::Icosphere {
+                    radius: 1.0,
+                    ..default()
+                }
+                .try_into()
+                .unwrap(),
+            ),
+            material: materials.add(StandardMaterial {
+                emissive: Color::GREEN,
+                ..default()
+            }),
+            ..default()
+        },
     ));
 
     // ambient light
@@ -135,10 +146,11 @@ fn spawn_player(
         });
 }
 
-fn physics_system(mut query: Query<(&mut Transform, &mut Velocity, &Acceleration)>) {
-    for (mut pos, mut vel, acc) in &mut query {
+fn physics_system(mut query: Query<(&mut Transform, &mut Velocity, &mut Acceleration)>) {
+    for (mut pos, mut vel, mut acc) in &mut query {
         vel.0 += acc.0;
         pos.translation += vel.0;
+        *acc = Acceleration(Vec3::ZERO)
     }
 }
 
