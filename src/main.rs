@@ -2,7 +2,7 @@ use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
 use bevy_inspector_egui::{
     prelude::ReflectInspectorOptions, quick::WorldInspectorPlugin, InspectorOptions,
 };
-use planet::{Drag, Planet, PlanetsPlugin};
+use planet::{Planet, PlanetsPlugin};
 
 mod planet;
 
@@ -12,7 +12,6 @@ fn main() {
     App::new()
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(IsDebugMode(false))
-        .register_type::<Drag>()
         .add_plugins((DefaultPlugins, WorldInspectorPlugin::new(), PlanetsPlugin))
         .add_systems(Startup, (init_camera, spawn))
         .add_systems(Update, (mouse_pos_update_system, toggle_debug_mode_system))
@@ -71,35 +70,6 @@ fn spawn(
         color: Color::WHITE,
         brightness: 0.4,
     });
-
-    // point source light
-    commands
-        .spawn(PointLightBundle {
-            transform: Transform::from_xyz(20.0, 50.0, -10.0),
-            point_light: PointLight {
-                intensity: 16000000.0, // lumens - roughly a 100W non-halogen incandescent bulb
-                color: Color::RED,
-                shadows_enabled: true,
-                range: 11000.0,
-                radius: 250.0,
-                ..default()
-            },
-            ..default()
-        })
-        .with_children(|builder| {
-            builder.spawn(PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::UVSphere {
-                    radius: 0.1,
-                    ..default()
-                })),
-                material: materials.add(StandardMaterial {
-                    base_color: Color::RED,
-                    emissive: Color::rgba_linear(7.13, 0.0, 0.0, 0.0),
-                    ..default()
-                }),
-                ..default()
-            });
-        });
 }
 
 fn mouse_pos_update_system(

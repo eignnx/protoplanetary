@@ -8,22 +8,27 @@ use crate::MouseDot;
 #[derive(Component)]
 pub struct Planet;
 
-#[derive(Component, Clone, Copy, Default)]
-pub struct Mass(pub f32);
+#[derive(Component, Resource, Default, Reflect, InspectorOptions)]
+#[reflect(Resource, InspectorOptions)]
+pub struct Mass(#[inspector(min = 0.0)] pub f32);
 
 #[derive(Component, Clone, Copy, Default)]
 pub struct Velocity(pub Vec3);
 
 #[derive(Component, Clone, Copy, Default)]
-pub struct Acceleration(pub Vec3);
+pub struct Force(pub Vec3);
 
-impl AddAssign for Acceleration {
+impl Force {
+    const ZERO: Self = Self(Vec3::ZERO);
+}
+
+impl AddAssign for Force {
     fn add_assign(&mut self, rhs: Self) {
         self.0 += rhs.0;
     }
 }
 
-impl SubAssign for Acceleration {
+impl SubAssign for Force {
     fn sub_assign(&mut self, rhs: Self) {
         self.0 -= rhs.0;
     }
@@ -37,7 +42,9 @@ pub struct PlanetsPlugin;
 
 impl Plugin for PlanetsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_planets)
+        app.register_type::<Drag>()
+            .register_type::<Mass>()
+            .add_systems(Startup, (spawn_planets, spawn_sun))
             .add_systems(
                 Update,
                 (
@@ -49,6 +56,48 @@ impl Plugin for PlanetsPlugin {
             )
             .add_systems(PostUpdate, (physics_system,));
     }
+}
+
+fn spawn_sun(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mass = 1000.0;
+    commands
+        .spawn((
+            PointLightBundle {
+                transform: Transform::from_translation(Vec3::ZERO),
+                point_light: PointLight {
+                    intensity: 16000000.0, // lumens - roughly a 100W non-halogen incandescent bulb
+                    color: Color::RED,
+                    shadows_enabled: true,
+                    range: 11000.0,
+                    radius: 250.0,
+                    ..default()
+                },
+                ..default()
+            },
+            Name::new("Sun"),
+            Planet,
+            Mass(mass),
+            Velocity(Vec3::ZERO),
+            Force::ZERO,
+            Drag(0.4),
+        ))
+        .with_children(|builder| {
+            builder.spawn(PbrBundle {
+                mesh: meshes.add(shape::Icosphere::default().try_into().unwrap()),
+                material: materials.add(StandardMaterial {
+                    base_color: Color::YELLOW,
+                    emissive: Color::WHITE,
+                    ..default()
+                }),
+                transform: Transform::from_translation(Vec3::ZERO)
+                    .with_scale(3.0 * Vec3::splat(mass.cbrt())),
+                ..default()
+            });
+        });
 }
 
 fn spawn_planets(
@@ -74,7 +123,7 @@ fn spawn_planets(
             Name::new("Planet"),
             Mass(mass),
             Velocity(0.025 * jitter),
-            Acceleration(Vec3::splat(0.0)),
+            Force(Vec3::splat(0.0)),
             Drag(0.01 + DRAG + (DRAG * (15000.0 * i).sin())),
             PbrBundle {
                 mesh: meshes.add(shape::Icosphere::default().try_into().unwrap()),
@@ -92,11 +141,11 @@ fn spawn_planets(
     }
 }
 
-fn physics_system(mut query: Query<(&mut Transform, &mut Velocity, &mut Acceleration)>) {
-    for (mut pos, mut vel, mut acc) in &mut query {
-        vel.0 += acc.0;
+fn physics_system(mut query: Query<(&mut Transform, &mut Velocity, &Mass, &mut Force)>) {
+    for (mut pos, mut vel, mass, mut net_force) in &mut query {
+        vel.0 += net_force.0 / mass.0;
         pos.translation += vel.0;
-        *acc = Acceleration(Vec3::ZERO)
+        *net_force = Force::ZERO;
     }
 }
 
@@ -122,7 +171,7 @@ fn attraction_force(
 
 const GRAV_CONST: f32 = 0.2;
 
-pub fn nbody_system(mut planets_mut: Query<(&Transform, &Mass, &mut Acceleration), With<Planet>>) {
+pub fn nbody_system(mut planets_mut: Query<(&Transform, &Mass, &mut Force), With<Planet>>) {
     let mut it = planets_mut.iter_combinations_mut();
     while let Some([(p1_trans, m1, mut p1_acc), (p2_trans, m2, mut p2_acc)]) = it.fetch_next() {
         let force = attraction_force(
@@ -132,14 +181,14 @@ pub fn nbody_system(mut planets_mut: Query<(&Transform, &Mass, &mut Acceleration
             p2_trans.translation,
             GRAV_CONST,
         );
-        *p1_acc += Acceleration(force / m1.0);
-        *p2_acc -= Acceleration(force / m2.0);
+        *p1_acc += Force(force / m1.0);
+        *p2_acc -= Force(force / m2.0);
     }
 }
 
 pub fn mouse_attraction_system(
     mouse_input: Res<Input<MouseButton>>,
-    mut q_player: Query<(&Transform, &Mass, &mut Acceleration), With<Planet>>,
+    mut q_player: Query<(&Transform, &Mass, &mut Force), With<Planet>>,
     q_mouse: Query<&Transform, With<MouseDot>>,
 ) {
     if !mouse_input.pressed(MouseButton::Left) {
@@ -152,9 +201,8 @@ pub fn mouse_attraction_system(
 
     for (player_pos, &Mass(mass), mut acc) in &mut q_player {
         let player_pos = player_pos.translation;
-        *acc += Acceleration(
-            attraction_force(mass, player_pos, MOUSE_DOT_MASS, mouse_pos, GRAV_CONST) / mass,
-        );
+        *acc +=
+            Force(attraction_force(mass, player_pos, MOUSE_DOT_MASS, mouse_pos, GRAV_CONST) / mass);
     }
 }
 
