@@ -70,7 +70,7 @@ fn spawn_sun(
                 transform: Transform::from_translation(Vec3::ZERO),
                 point_light: PointLight {
                     intensity: 16000000.0, // lumens - roughly a 100W non-halogen incandescent bulb
-                    color: Color::RED,
+                    color: Color::rgba_u8(255, 221, 156, 255),
                     shadows_enabled: true,
                     range: 11000.0,
                     radius: 250.0,

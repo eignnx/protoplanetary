@@ -1,4 +1,9 @@
-use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
+use bevy::{
+    core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
+    math::Vec3Swizzles,
+    prelude::*,
+    window::PrimaryWindow,
+};
 use bevy_inspector_egui::{
     prelude::ReflectInspectorOptions, quick::WorldInspectorPlugin, InspectorOptions,
 };
@@ -6,7 +11,7 @@ use planet::{Planet, PlanetsPlugin};
 
 mod planet;
 
-const BACKGROUND_COLOR: Color = Color::rgb(0.1, 0.01, 0.02);
+const BACKGROUND_COLOR: Color = Color::rgb(9. / 255., 1. / 255., 17. / 255.);
 
 fn main() {
     App::new()
@@ -26,9 +31,15 @@ struct MainCamera;
 fn init_camera(mut commands: Commands) {
     commands.spawn((
         MainCamera,
+        BloomSettings::default(), // 3. Enable bloom for the camera
         Camera3dBundle {
+            camera: Camera {
+                hdr: true, // 1. HDR is required for bloom
+                ..default()
+            },
+            tonemapping: Tonemapping::TonyMcMapface, // 2. Using a tonemapper that desaturates to white is recommended
             transform: Transform::from_xyz(0.0, 0.0, 1000.0).looking_at(Vec3::splat(0.0), Vec3::Y),
-            ..Default::default()
+            ..default()
         },
     ));
 }
@@ -67,8 +78,8 @@ fn spawn(
 
     // ambient light
     commands.insert_resource(AmbientLight {
-        color: Color::WHITE,
-        brightness: 0.4,
+        color: Color::rgba_u8(213, 211, 255, 255),
+        brightness: 0.15,
     });
 }
 
