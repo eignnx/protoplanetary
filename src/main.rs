@@ -1,15 +1,19 @@
 use bevy::{
-    core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
-    math::Vec3Swizzles,
+    core_pipeline::{
+        bloom::{BloomCompositeMode, BloomSettings},
+        tonemapping::Tonemapping,
+    },
     prelude::*,
     window::PrimaryWindow,
 };
-use bevy_inspector_egui::{
-    prelude::ReflectInspectorOptions, quick::WorldInspectorPlugin, InspectorOptions,
-};
+use bevy_inspector_egui::{prelude::ReflectInspectorOptions, InspectorOptions};
+use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use planet::{Planet, PlanetsPlugin};
+use ui::MyUiPlugin;
 
+mod components;
 mod planet;
+mod ui;
 
 const BACKGROUND_COLOR: Color = Color::rgb(9. / 255., 1. / 255., 17. / 255.);
 
@@ -17,7 +21,12 @@ fn main() {
     App::new()
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(IsDebugMode(false))
-        .add_plugins((DefaultPlugins, WorldInspectorPlugin::new(), PlanetsPlugin))
+        .add_plugins((
+            DefaultPlugins,
+            PanOrbitCameraPlugin,
+            PlanetsPlugin,
+            MyUiPlugin,
+        ))
         .add_systems(Startup, (init_camera, spawn))
         .add_systems(Update, (mouse_pos_update_system, toggle_debug_mode_system))
         .add_systems(PostUpdate, (spawn_debug_lines_system,))
@@ -31,7 +40,7 @@ struct MainCamera;
 fn init_camera(mut commands: Commands) {
     commands.spawn((
         MainCamera,
-        BloomSettings::default(), // 3. Enable bloom for the camera
+        PanOrbitCamera::default(),
         Camera3dBundle {
             camera: Camera {
                 hdr: true, // 1. HDR is required for bloom
@@ -41,6 +50,14 @@ fn init_camera(mut commands: Commands) {
             transform: Transform::from_xyz(0.0, 0.0, 1000.0).looking_at(Vec3::splat(0.0), Vec3::Y),
             ..default()
         },
+        BloomSettings {
+            intensity: 0.25,
+            low_frequency_boost: 1.0,
+            low_frequency_boost_curvature: 0.7,
+            high_pass_frequency: 0.6,
+            composite_mode: BloomCompositeMode::Additive,
+            ..default()
+        }, // 3. Enable bloom for the camera
     ));
 }
 
@@ -120,9 +137,9 @@ fn spawn_debug_lines_system(
 
     let mouse_pos = q_mouse.single();
     for ball_pos in &q_balls {
-        gizmos.line_2d(
-            ball_pos.translation.xy(),
-            mouse_pos.translation.xy(),
+        gizmos.line(
+            ball_pos.translation,
+            mouse_pos.translation,
             Color::Hsla {
                 hue: 0.,
                 saturation: 0.,

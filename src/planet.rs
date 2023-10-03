@@ -1,42 +1,14 @@
-use std::ops::{AddAssign, SubAssign};
+use std::f32::consts::PI;
 
-use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
-use bevy_inspector_egui::{prelude::ReflectInspectorOptions, InspectorOptions};
+use bevy::prelude::*;
 
-use crate::MouseDot;
+use crate::{
+    components::{Drag, Force, Mass, Velocity},
+    MouseDot,
+};
 
 #[derive(Component)]
 pub struct Planet;
-
-#[derive(Component, Resource, Default, Reflect, InspectorOptions)]
-#[reflect(Resource, InspectorOptions)]
-pub struct Mass(#[inspector(min = 0.0)] pub f32);
-
-#[derive(Component, Clone, Copy, Default)]
-pub struct Velocity(pub Vec3);
-
-#[derive(Component, Clone, Copy, Default)]
-pub struct Force(pub Vec3);
-
-impl Force {
-    const ZERO: Self = Self(Vec3::ZERO);
-}
-
-impl AddAssign for Force {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
-    }
-}
-
-impl SubAssign for Force {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 -= rhs.0;
-    }
-}
-
-#[derive(Component, Resource, Default, Reflect, InspectorOptions)]
-#[reflect(Resource, InspectorOptions)]
-pub struct Drag(#[inspector(min = 0.0, max = 1.0)] pub f32);
 
 pub struct PlanetsPlugin;
 
@@ -44,101 +16,131 @@ impl Plugin for PlanetsPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<Drag>()
             .register_type::<Mass>()
+            .register_type::<Velocity>()
+            .register_type::<Force>()
+            .add_event::<SpawnPlanetEvent>()
             .add_systems(Startup, (spawn_planets, spawn_sun))
+            .add_systems(PreUpdate, (spawn_planet_system,))
             .add_systems(
                 Update,
                 (
                     drag_system,
                     nbody_system,
                     mouse_attraction_system,
-                    player_bounds_system,
+                    bounds_system,
                 ),
             )
             .add_systems(PostUpdate, (physics_system,));
     }
 }
 
+const SUN_MASS: f32 = 1000.0;
+
 fn spawn_sun(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let mass = 1000.0;
+    let radius: f32 = 3.0 * SUN_MASS.cbrt();
+
     commands
         .spawn((
             PointLightBundle {
                 transform: Transform::from_translation(Vec3::ZERO),
                 point_light: PointLight {
-                    intensity: 16000000.0, // lumens - roughly a 100W non-halogen incandescent bulb
+                    intensity: 1600000.0, // lumens - roughly a 100W non-halogen incandescent bulb
                     color: Color::rgba_u8(255, 221, 156, 255),
                     shadows_enabled: true,
                     range: 11000.0,
-                    radius: 250.0,
+                    radius,
                     ..default()
                 },
                 ..default()
             },
             Name::new("Sun"),
             Planet,
-            Mass(mass),
-            Velocity(Vec3::ZERO),
+            Mass(SUN_MASS),
+            Velocity::ZERO,
             Force::ZERO,
-            Drag(0.4),
+            // Drag(0.4),
         ))
         .with_children(|builder| {
             builder.spawn(PbrBundle {
-                mesh: meshes.add(shape::Icosphere::default().try_into().unwrap()),
+                mesh: meshes.add(shape::UVSphere::default().try_into().unwrap()),
                 material: materials.add(StandardMaterial {
                     base_color: Color::YELLOW,
                     emissive: Color::WHITE,
                     ..default()
                 }),
-                transform: Transform::from_translation(Vec3::ZERO)
-                    .with_scale(3.0 * Vec3::splat(mass.cbrt())),
+                transform: Transform::from_translation(Vec3::ZERO).with_scale(Vec3::splat(radius)),
                 ..default()
             });
         });
 }
 
-fn spawn_planets(
+#[derive(Event, Clone, Copy)]
+pub struct SpawnPlanetEvent;
+
+fn spawn_planet_system(
+    mut ereader: EventReader<SpawnPlanetEvent>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    const N: usize = 100;
-    for i in 0..N {
-        let i = i as f32 / N as f32;
+    for (_event, id) in ereader.iter_with_id() {
+        const MODULUS: usize = 834261;
+        let i = (id.id * 1234578 % MODULUS) as f32 / MODULUS as f32;
+
+        // let i = i as f32 / N as f32;
+
         let jitter = Vec3::new(
             100.0 * (i * 19251.352 - 5.32).sin(),
             100.0 * (i * 13526.221).cos(),
-            0.0,
+            100.0 * (PI - i * 6543.64).sin(),
         );
+        let pos = jitter;
+        let mass: f32 = 50.0 * (1.0 - (i * 16236.0).sin().abs()) + 2.0;
+        let radius: f32 = 3.0 * mass.cbrt();
+        let orbit_speed = 0.025 * f32::sqrt(GRAV_CONST * SUN_MASS * mass * pos.length_recip());
 
-        const DRAG: f32 = 0.01;
+        // const DRAG: f32 = 0.01;
+        // const MIN_DRAG: f32 = 0.01;
 
-        let mass = 50.0 * (1.0 - (i * 16236.0).sin().abs()) + 2.0;
+        let material = StandardMaterial {
+            base_color: Color::Hsla {
+                hue: 360.0 * i,
+                saturation: 0.5,
+                lightness: 0.5,
+                alpha: 1.0,
+            },
+            perceptual_roughness: 0.9,
+            metallic: 0.5,
+            reflectance: 0.1,
+            fog_enabled: true,
+            ..default()
+        };
 
         commands.spawn((
             Planet,
-            Name::new("Planet"),
+            Name::new(format!("Planet (m={mass:.1})")),
             Mass(mass),
-            Velocity(0.025 * jitter),
+            Velocity(orbit_speed * pos.normalize().any_orthonormal_vector()),
             Force(Vec3::splat(0.0)),
-            Drag(0.01 + DRAG + (DRAG * (15000.0 * i).sin())),
+            // Drag(MIN_DRAG + DRAG + (DRAG * (15000.0 * i).sin())),
+            Drag(0.0),
             PbrBundle {
-                mesh: meshes.add(shape::Icosphere::default().try_into().unwrap()),
-                material: materials.add(StandardMaterial::from(Color::Hsla {
-                    hue: 360.0 * i,
-                    saturation: 0.5,
-                    lightness: 0.5,
-                    alpha: 1.0,
-                })),
-                transform: Transform::from_translation(jitter + Vec3 { z: i, ..default() })
-                    .with_scale(3.0 * Vec3::splat(mass.cbrt())),
+                mesh: meshes.add(shape::UVSphere::default().try_into().unwrap()),
+                material: materials.add(material),
+                transform: Transform::from_translation(jitter).with_scale(Vec3::splat(radius)),
                 ..default()
             },
         ));
     }
+}
+
+fn spawn_planets(mut ewriter: EventWriter<SpawnPlanetEvent>) {
+    const N: usize = 25;
+    ewriter.send_batch(std::iter::repeat(SpawnPlanetEvent).take(N));
 }
 
 fn physics_system(mut query: Query<(&mut Transform, &mut Velocity, &Mass, &mut Force)>) {
@@ -162,7 +164,7 @@ fn attraction_force(
     parent_pos: Vec3,
     grav_const: f32,
 ) -> Vec3 {
-    const MIN_DIST: f32 = 0.5;
+    const MIN_DIST: f32 = 0.01;
     let sat_to_parent = parent_pos - sat_pos;
     let toward_parent = sat_to_parent.normalize_or_zero();
     grav_const * sat_mass * parent_mass * toward_parent
@@ -173,14 +175,9 @@ const GRAV_CONST: f32 = 0.2;
 
 pub fn nbody_system(mut planets_mut: Query<(&Transform, &Mass, &mut Force), With<Planet>>) {
     let mut it = planets_mut.iter_combinations_mut();
-    while let Some([(p1_trans, m1, mut p1_acc), (p2_trans, m2, mut p2_acc)]) = it.fetch_next() {
-        let force = attraction_force(
-            m1.0,
-            p1_trans.translation,
-            m2.0,
-            p2_trans.translation,
-            GRAV_CONST,
-        );
+    while let Some([(p1_tsf, m1, mut p1_acc), (p2_tsf, m2, mut p2_acc)]) = it.fetch_next() {
+        let (p1_tsl, p2_tsl) = (p1_tsf.translation, p2_tsf.translation);
+        let force = attraction_force(m1.0, p1_tsl, m2.0, p2_tsl, GRAV_CONST);
         *p1_acc += Force(force / m1.0);
         *p2_acc -= Force(force / m2.0);
     }
@@ -206,33 +203,39 @@ pub fn mouse_attraction_system(
     }
 }
 
-fn player_bounds_system(
-    mut q_player: Query<(&mut Transform, &mut Velocity), With<Planet>>,
-    q_windows: Query<&Window, With<PrimaryWindow>>,
+fn bounds_system(//
+    // mut q_player: Query<(&mut Transform, &mut Velocity), With<Planet>>,
+    // q_windows: Query<&Window, With<PrimaryWindow>>,
 ) {
-    let Ok(win) = q_windows.get_single() else { return };
-    let win = Rect::new(
-        -win.width() / 2.0,
-        -win.height() / 2.0,
-        win.width() / 2.0,
-        win.height() / 2.0,
-    );
-    for (mut transform, mut vel) in &mut q_player {
-        let mut pos = transform.translation;
-        if win.contains(pos.xy()) {
-            continue;
-        }
+    // let Ok(win) = q_windows.get_single() else { return };
+    // let (w, h) = (win.width(), win.height());
+    // let d = 0.5 * (w + h);
 
-        if !(win.min.x..win.max.x).contains(&pos.x) {
-            pos.x = pos.x.clamp(win.min.x, win.max.x);
-            vel.0.x *= -1.0;
-        }
+    // let bounds = bevy::prelude::shape::Box {
+    //     min_x: -0.5 * w,
+    //     max_x: 0.5 * w,
+    //     min_y: -0.5 * h,
+    //     max_y: 0.5 * h,
+    //     min_z: -0.5 * d,
+    //     max_z: 0.5 * d,
+    // };
 
-        if !(win.min.y..win.max.y).contains(&pos.y) {
-            pos.y = pos.y.clamp(win.min.y, win.max.y);
-            vel.0.y *= -1.0;
-        }
+    // for (mut transform, mut vel) in &mut q_player {
+    //     let mut pos = transform.translation;
+    //     if bounds..contains(pos) {
+    //         continue;
+    //     }
 
-        transform.translation = pos;
-    }
+    //     if !(win.min.x..win.max.x).contains(&pos.x) {
+    //         pos.x = pos.x.clamp(win.min.x, win.max.x);
+    //         vel.0.x *= -1.0;
+    //     }
+
+    //     if !(win.min.y..win.max.y).contains(&pos.y) {
+    //         pos.y = pos.y.clamp(win.min.y, win.max.y);
+    //         vel.0.y *= -1.0;
+    //     }
+
+    //     transform.translation = pos;
+    // }
 }
