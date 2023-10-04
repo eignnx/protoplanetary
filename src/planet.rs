@@ -1,11 +1,29 @@
 use std::f32::consts::TAU;
 
 use bevy::prelude::*;
+use rand::prelude::*;
 
 use crate::{
     components::{Drag, Force, Mass, Velocity},
     MouseDot,
 };
+
+#[derive(Resource)]
+pub struct Constants {
+    pub mouse_dot_mass: f32,
+    pub grav_const: f32,
+    pub min_attraction_dist: f32,
+}
+
+impl Default for Constants {
+    fn default() -> Self {
+        Self {
+            mouse_dot_mass: 2000.0,
+            grav_const: 0.2,
+            min_attraction_dist: 0.001,
+        }
+    }
+}
 
 #[derive(Component)]
 pub struct Planet;
@@ -14,11 +32,13 @@ pub struct PlanetsPlugin;
 
 impl Plugin for PlanetsPlugin {
     fn build(&self, app: &mut App) {
-        app.register_type::<Drag>()
+        app // <no autoformat>
+            .register_type::<Drag>()
             .register_type::<Mass>()
             .register_type::<Velocity>()
             .register_type::<Force>()
             .add_event::<SpawnPlanetEvent>()
+            .init_resource::<Constants>()
             .add_systems(Startup, (spawn_planets, spawn_sun))
             .add_systems(PreUpdate, (spawn_planet_system,))
             .add_systems(
@@ -78,26 +98,39 @@ fn spawn_sun(
         });
 }
 
-#[derive(Event, Clone, Copy)]
-pub struct SpawnPlanetEvent;
+#[derive(Event, Default, Clone, Copy)]
+pub struct SpawnPlanetEvent {
+    pub pos: Option<Vec3>,
+    pub vel: Option<Vec3>,
+    pub mass: Option<f32>,
+}
 
 fn spawn_planet_system(
     mut ereader: EventReader<SpawnPlanetEvent>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    constants: Res<Constants>,
 ) {
-    for _event in ereader.iter() {
-        use rand::prelude::*;
+    for event in ereader.iter() {
         let mut rng = thread_rng();
 
-        let pos = rng.gen_range(50.0..500.0)
-            * (Quat::from_axis_angle(Vec3::Y, rng.gen_range(0.0..TAU)).mul_vec3(Vec3::X)
-                + rng.gen_range(-0.1..0.1) * Vec3::Y);
+        let pos = event.pos.unwrap_or_else(|| {
+            rng.gen_range(50.0..500.0)
+                * (Quat::from_axis_angle(Vec3::Y, rng.gen_range(0.0..TAU)).mul_vec3(Vec3::X)
+                    + rng.gen_range(-0.1..0.1) * Vec3::Y)
+        });
 
-        let mass: f32 = 50.0 * rng.gen_range(0.0..1.0) + 2.0;
+        let mass = event
+            .mass
+            .unwrap_or_else(|| 50.0 * rng.gen_range(0.0..1.0) + 2.0);
         let radius: f32 = 3.0 * mass.cbrt();
-        let orbit_speed = 0.025 * f32::sqrt(GRAV_CONST * SUN_MASS * mass * pos.length_recip());
+
+        let vel = event.vel.unwrap_or_else(|| {
+            let orbit_speed =
+                0.025 * f32::sqrt(constants.grav_const * SUN_MASS * mass * pos.length_recip());
+            -orbit_speed * pos.normalize().cross(Vec3::Y)
+        });
 
         let material = StandardMaterial {
             base_color: Color::Hsla {
@@ -117,7 +150,7 @@ fn spawn_planet_system(
             Planet,
             Name::new(format!("Planet (m={mass:.1})")),
             Mass(mass),
-            Velocity(-orbit_speed * pos.normalize().cross(Vec3::Y)),
+            Velocity(vel),
             Force::ZERO,
             Drag(0.0),
             PbrBundle {
@@ -132,7 +165,7 @@ fn spawn_planet_system(
 
 fn spawn_planets(mut ewriter: EventWriter<SpawnPlanetEvent>) {
     const N: usize = 25;
-    ewriter.send_batch(std::iter::repeat(SpawnPlanetEvent).take(N));
+    ewriter.send_batch(std::iter::repeat(SpawnPlanetEvent::default()).take(N));
 }
 
 fn physics_system(mut query: Query<(&mut Transform, &mut Velocity, &Mass, &mut Force)>) {
@@ -155,21 +188,29 @@ fn attraction_force(
     parent_mass: f32,
     parent_pos: Vec3,
     grav_const: f32,
+    min_dist: f32,
 ) -> Vec3 {
-    const MIN_DIST: f32 = 0.001;
     let sat_to_parent = parent_pos - sat_pos;
     let toward_parent = sat_to_parent.normalize_or_zero();
     grav_const * sat_mass * parent_mass * toward_parent
-        / (sat_to_parent.length_squared() + MIN_DIST)
+        / (sat_to_parent.length_squared() + min_dist)
 }
 
-const GRAV_CONST: f32 = 0.2;
-
-pub fn nbody_system(mut planets_mut: Query<(&Transform, &Mass, &mut Force), With<Planet>>) {
+pub fn nbody_system(
+    mut planets_mut: Query<(&Transform, &Mass, &mut Force), With<Planet>>,
+    constants: Res<Constants>,
+) {
     let mut it = planets_mut.iter_combinations_mut();
     while let Some([(p1_tsf, m1, mut p1_acc), (p2_tsf, m2, mut p2_acc)]) = it.fetch_next() {
         let (p1_tsl, p2_tsl) = (p1_tsf.translation, p2_tsf.translation);
-        let force = attraction_force(m1.0, p1_tsl, m2.0, p2_tsl, GRAV_CONST);
+        let force = attraction_force(
+            m1.0,
+            p1_tsl,
+            m2.0,
+            p2_tsl,
+            constants.grav_const,
+            constants.min_attraction_dist,
+        );
         *p1_acc += Force(force / m1.0);
         *p2_acc -= Force(force / m2.0);
     }
@@ -179,19 +220,26 @@ pub fn mouse_attraction_system(
     mouse_input: Res<Input<MouseButton>>,
     mut q_player: Query<(&Transform, &Mass, &mut Force), With<Planet>>,
     q_mouse: Query<&Transform, With<MouseDot>>,
+    constants: Res<Constants>,
 ) {
     if !mouse_input.pressed(MouseButton::Left) {
         return;
     }
 
-    const MOUSE_DOT_MASS: f32 = 2000.0;
-
     let mouse_pos = q_mouse.single().translation;
 
     for (player_pos, &Mass(mass), mut acc) in &mut q_player {
         let player_pos = player_pos.translation;
-        *acc +=
-            Force(attraction_force(mass, player_pos, MOUSE_DOT_MASS, mouse_pos, GRAV_CONST) / mass);
+        *acc += Force(
+            attraction_force(
+                mass,
+                player_pos,
+                constants.mouse_dot_mass,
+                mouse_pos,
+                constants.grav_const,
+                constants.min_attraction_dist,
+            ) / mass,
+        );
     }
 }
 
