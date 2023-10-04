@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::f32::consts::TAU;
 
 use bevy::prelude::*;
 
@@ -87,28 +87,21 @@ fn spawn_planet_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (_event, id) in ereader.iter_with_id() {
-        const MODULUS: usize = 834261;
-        let i = (id.id * 1234578 % MODULUS) as f32 / MODULUS as f32;
+    for _event in ereader.iter() {
+        use rand::prelude::*;
+        let mut rng = thread_rng();
 
-        // let i = i as f32 / N as f32;
+        let pos = rng.gen_range(50.0..500.0)
+            * (Quat::from_axis_angle(Vec3::Y, rng.gen_range(0.0..TAU)).mul_vec3(Vec3::X)
+                + rng.gen_range(-0.1..0.1) * Vec3::Y);
 
-        let jitter = Vec3::new(
-            100.0 * (i * 19251.352 - 5.32).sin(),
-            100.0 * (i * 13526.221).cos(),
-            100.0 * (PI - i * 6543.64).sin(),
-        );
-        let pos = jitter;
-        let mass: f32 = 50.0 * (1.0 - (i * 16236.0).sin().abs()) + 2.0;
+        let mass: f32 = 50.0 * rng.gen_range(0.0..1.0) + 2.0;
         let radius: f32 = 3.0 * mass.cbrt();
         let orbit_speed = 0.025 * f32::sqrt(GRAV_CONST * SUN_MASS * mass * pos.length_recip());
 
-        // const DRAG: f32 = 0.01;
-        // const MIN_DRAG: f32 = 0.01;
-
         let material = StandardMaterial {
             base_color: Color::Hsla {
-                hue: 360.0 * i,
+                hue: 360.0 * rng.gen_range(0.0..1.0),
                 saturation: 0.5,
                 lightness: 0.5,
                 alpha: 1.0,
@@ -124,14 +117,13 @@ fn spawn_planet_system(
             Planet,
             Name::new(format!("Planet (m={mass:.1})")),
             Mass(mass),
-            Velocity(orbit_speed * pos.normalize().any_orthonormal_vector()),
-            Force(Vec3::splat(0.0)),
-            // Drag(MIN_DRAG + DRAG + (DRAG * (15000.0 * i).sin())),
+            Velocity(-orbit_speed * pos.normalize().cross(Vec3::Y)),
+            Force::ZERO,
             Drag(0.0),
             PbrBundle {
                 mesh: meshes.add(shape::UVSphere::default().try_into().unwrap()),
                 material: materials.add(material),
-                transform: Transform::from_translation(jitter).with_scale(Vec3::splat(radius)),
+                transform: Transform::from_translation(pos).with_scale(Vec3::splat(radius)),
                 ..default()
             },
         ));
@@ -164,7 +156,7 @@ fn attraction_force(
     parent_pos: Vec3,
     grav_const: f32,
 ) -> Vec3 {
-    const MIN_DIST: f32 = 0.01;
+    const MIN_DIST: f32 = 0.001;
     let sat_to_parent = parent_pos - sat_pos;
     let toward_parent = sat_to_parent.normalize_or_zero();
     grav_const * sat_mass * parent_mass * toward_parent

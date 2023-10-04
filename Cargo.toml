@@ -9,6 +9,7 @@ edition = "2021"
 bevy = "0.11.2"
 bevy-inspector-egui = "0.19"
 bevy_panorbit_camera = { version = "0.8.0", features = ["bevy_egui"] }
+rand = "0.8.5"
 
 [workspace]
 resolver = "2" # Important! wgpu/Bevy needs this!
