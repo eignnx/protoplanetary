@@ -53,6 +53,14 @@ fn root_ui_system(
     mut constants: ResMut<Constants>,
     mut ewriter: EventWriter<SpawnPlanetEvent>,
 ) {
+    if input.just_pressed(KeyCode::W) {
+        state.world_inspector_open = !state.world_inspector_open;
+    }
+
+    if input.just_pressed(KeyCode::P) {
+        state.right_panel_open = !state.right_panel_open;
+    }
+
     egui::containers::SidePanel::right("my_side_panel").show_animated(
         contexts.ctx_mut(),
         state.right_panel_open,
@@ -165,8 +173,4 @@ fn root_ui_system(
                 });
         },
     );
-
-    if input.just_pressed(KeyCode::P) {
-        state.right_panel_open = !state.right_panel_open;
-    }
 }
