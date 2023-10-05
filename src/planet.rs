@@ -70,7 +70,7 @@ fn spawn_sun(
                 point_light: PointLight {
                     intensity: 10_000_000.0,
                     range: 10_000.0,
-                    radius: 1.0,
+                    radius: 3.0,
                     color: Color::ORANGE,
                     shadows_enabled: true,
                     ..default()
@@ -233,12 +233,14 @@ fn nbody_system(
                 entity: e1,
                 mass: m1,
                 vel: v1,
+                pos: tsl1,
             };
 
             let p2 = PlanetInfo {
                 entity: e2,
                 mass: m2,
                 vel: v2,
+                pos: tsl2,
             };
 
             let (larger, smaller) = if m1.0 > m2.0 { (p1, p2) } else { (p2, p1) };
