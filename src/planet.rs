@@ -138,8 +138,7 @@ fn spawn_planet_system(
         let radius: f32 = radius_from_mass(mass);
 
         let vel = event.vel.unwrap_or_else(|| {
-            let orbit_speed =
-                0.025 * f32::sqrt(constants.grav_const * SUN_MASS * mass * pos.length_recip());
+            let orbit_speed = f32::sqrt(constants.grav_const * SUN_MASS * pos.length_recip());
             -orbit_speed * pos.normalize().cross(Vec3::Y)
         });
 
