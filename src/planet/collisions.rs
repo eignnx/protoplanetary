@@ -58,7 +58,7 @@ fn collision_resolution_system(
     mut q_planets: Query<CollisionResolutionPlanetsData, With<Planet>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let mut new_vels = HashMap::new();
+    let mut new_phys_state = HashMap::new();
 
     for group in collision_groups.map.values() {
         let gid = group.largest.entity;
@@ -92,7 +92,7 @@ fn collision_resolution_system(
             / total_mass.0;
 
         let new_v = total_momentum / total_mass.0;
-        new_vels.insert(group.largest.entity, (total_mass, new_v, center_of_mass));
+        new_phys_state.insert(group.largest.entity, (total_mass, new_v, center_of_mass));
 
         // Despawn all the group members (excluding `largest`).
         for planet in &group.members {
@@ -101,7 +101,7 @@ fn collision_resolution_system(
     }
 
     for (e, mut mesh, mut rad, mut vel, mut mass, mut tsf) in q_planets.iter_mut() {
-        if let Some((new_m, new_v, center_of_mass)) = new_vels.get(&e) {
+        if let Some((new_m, new_v, center_of_mass)) = new_phys_state.get(&e) {
             *vel = Velocity(*new_v);
             *mass = *new_m;
             *rad = Radius(radius_from_mass(mass.0));
