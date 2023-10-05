@@ -14,7 +14,7 @@ mod collisions;
 
 #[derive(Resource)]
 pub struct Constants {
-    pub mouse_dot_mass: f32,
+    pub mouse_spring_strength: f32,
     pub grav_const: f32,
     pub min_attraction_dist: f32,
 }
@@ -22,8 +22,8 @@ pub struct Constants {
 impl Default for Constants {
     fn default() -> Self {
         Self {
-            mouse_dot_mass: 2000.0,
-            grav_const: 0.2,
+            mouse_spring_strength: 0.01,
+            grav_const: 20.0,
             min_attraction_dist: 0.001,
         }
     }
@@ -43,10 +43,7 @@ impl Plugin for PlanetsPlugin {
             .add_plugins(CollisionResolutionPlugin)
             .add_systems(Startup, (spawn_planets, spawn_sun))
             .add_systems(PreUpdate, (spawn_planet_system,))
-            .add_systems(
-                Update,
-                (nbody_system, mouse_attraction_system, bounds_system),
-            )
+            .add_systems(Update, (nbody_system, mouse_attraction_system))
             .add_systems(PostUpdate, (physics_system,));
     }
 }
@@ -185,26 +182,16 @@ fn spawn_planets(mut ewriter: EventWriter<SpawnPlanetEvent>) {
     ewriter.send_batch(std::iter::repeat(SpawnPlanetEvent::default()).take(N));
 }
 
-fn physics_system(mut query: Query<(&mut Transform, &mut Velocity, &Mass, &mut Force)>) {
+fn physics_system(
+    mut query: Query<(&mut Transform, &mut Velocity, &Mass, &mut Force)>,
+    time: Res<Time>,
+) {
+    let dt = time.delta_seconds();
     for (mut pos, mut vel, mass, mut net_force) in &mut query {
-        vel.0 += net_force.0 / mass.0;
-        pos.translation += vel.0;
+        vel.0 += net_force.0 / mass.0 * dt;
+        pos.translation += vel.0 * dt;
         *net_force = Force::ZERO;
     }
-}
-
-fn attraction_force(
-    sat_mass: f32,
-    sat_pos: Vec3,
-    parent_mass: f32,
-    parent_pos: Vec3,
-    grav_const: f32,
-    min_dist: f32,
-) -> Vec3 {
-    let sat_to_parent = parent_pos - sat_pos;
-    let toward_parent = sat_to_parent.normalize_or_zero();
-    grav_const * sat_mass * parent_mass * toward_parent
-        / (sat_to_parent.length_squared() + min_dist)
 }
 
 type NBodyPlanetsData<'a, 'b, 'c, 'd, 'e> = (
@@ -280,7 +267,7 @@ fn nbody_system(
 
 pub fn mouse_attraction_system(
     mouse_input: Res<Input<MouseButton>>,
-    mut q_player: Query<(&Transform, &Mass, &mut Force), With<Planet>>,
+    mut q_planets: Query<(&Transform, &Mass, &mut Force), With<Planet>>,
     q_mouse: Query<&Transform, With<MouseDot>>,
     constants: Res<Constants>,
 ) {
@@ -288,56 +275,12 @@ pub fn mouse_attraction_system(
         return;
     }
 
-    let mouse_pos = q_mouse.single().translation;
+    let mouse_tsl = q_mouse.single().translation;
 
-    for (player_pos, &Mass(mass), mut acc) in &mut q_player {
-        let player_pos = player_pos.translation;
-        *acc += Force(
-            attraction_force(
-                mass,
-                player_pos,
-                constants.mouse_dot_mass,
-                mouse_pos,
-                constants.grav_const,
-                constants.min_attraction_dist,
-            ) / mass,
-        );
+    for (planet_tsf, &Mass(mass), mut net_force) in &mut q_planets {
+        let planet_tsl = planet_tsf.translation;
+        let r = mouse_tsl - planet_tsl;
+        let k = constants.mouse_spring_strength;
+        *net_force += Force(k * mass * r);
     }
-}
-
-fn bounds_system(//
-    // mut q_player: Query<(&mut Transform, &mut Velocity), With<Planet>>,
-    // q_windows: Query<&Window, With<PrimaryWindow>>,
-) {
-    // let Ok(win) = q_windows.get_single() else { return };
-    // let (w, h) = (win.width(), win.height());
-    // let d = 0.5 * (w + h);
-
-    // let bounds = bevy::prelude::shape::Box {
-    //     min_x: -0.5 * w,
-    //     max_x: 0.5 * w,
-    //     min_y: -0.5 * h,
-    //     max_y: 0.5 * h,
-    //     min_z: -0.5 * d,
-    //     max_z: 0.5 * d,
-    // };
-
-    // for (mut transform, mut vel) in &mut q_player {
-    //     let mut pos = transform.translation;
-    //     if bounds..contains(pos) {
-    //         continue;
-    //     }
-
-    //     if !(win.min.x..win.max.x).contains(&pos.x) {
-    //         pos.x = pos.x.clamp(win.min.x, win.max.x);
-    //         vel.0.x *= -1.0;
-    //     }
-
-    //     if !(win.min.y..win.max.y).contains(&pos.y) {
-    //         pos.y = pos.y.clamp(win.min.y, win.max.y);
-    //         vel.0.y *= -1.0;
-    //     }
-
-    //     transform.translation = pos;
-    // }
 }

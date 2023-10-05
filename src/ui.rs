@@ -152,14 +152,14 @@ fn root_ui_system(
                     ui.horizontal(|ui| {
                         ui.label("Mouse Interaction Strength");
                         ui.add(
-                            DragValue::new(&mut constants.mouse_dot_mass)
+                            DragValue::new(&mut constants.mouse_spring_strength)
                                 .speed(0.1)
                                 .clamp_range(0.0..=f32::MAX),
                         );
                         egui::reset_button_with(
                             ui,
-                            &mut constants.mouse_dot_mass,
-                            Constants::default().mouse_dot_mass,
+                            &mut constants.mouse_spring_strength,
+                            Constants::default().mouse_spring_strength,
                         );
                     });
                 });

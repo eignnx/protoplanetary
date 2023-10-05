@@ -61,27 +61,10 @@ fn collision_resolution_system(
     let mut new_phys_state = HashMap::new();
 
     for group in collision_groups.map.values() {
-        let gid = group.largest.entity;
-
-        info!(
-            "GROUP LARGEST {gid:?}: mass = {largest_mass:?}, radius = {radius}",
-            largest_mass = group.largest.mass,
-            radius = radius_from_mass(group.largest.mass.0),
-        );
-
         let total_mass = group.iter_all_planets().map(|p| p.mass).sum::<Mass>();
-
-        info!("{gid:?} > TOTAL MASS: total mass = {total_mass:?}");
 
         let total_momentum = group
             .iter_all_planets()
-            .inspect(|p| {
-                info!(
-                    "{gid:?} > GROUP MEMBER {e:?}: mass = {m:?}",
-                    e = p.entity,
-                    m = p.mass
-                )
-            })
             .map(|p| p.mass.0 * p.vel.0)
             .sum::<Vec3>();
 
@@ -106,8 +89,6 @@ fn collision_resolution_system(
             *mass = *new_m;
             *rad = Radius(radius_from_mass(mass.0));
             tsf.translation = *center_of_mass;
-
-            info!("{e:?} > RESULT: mass = {new_m:?}, radius = {rad:?}");
 
             *mesh = meshes.set(
                 mesh.as_ref(),

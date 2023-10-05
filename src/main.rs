@@ -96,7 +96,7 @@ fn spawn(
     // ambient light
     commands.insert_resource(AmbientLight {
         color: Color::rgba_u8(213, 211, 255, 255),
-        brightness: 0.15,
+        brightness: 0.25,
     });
 }
 
@@ -115,11 +115,11 @@ fn mouse_pos_update_system(
     let window = q_windows.single();
 
     // check if the cursor is inside the window and get its position
-    // then, ask bevy to convert into world coordinates, and truncate to discard Z
+    // then, ask bevy to convert into world coordinates.
     if let Some(world_position) = window
         .cursor_position()
         .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
-        .and_then(|ray| Some(ray.get_point(ray.intersect_plane(Vec3::X, Vec3::Z)?)))
+        .and_then(|ray| Some(ray.get_point(ray.intersect_plane(Vec3::ZERO, Vec3::Y)?)))
     {
         *mouse_dot_pos = world_position;
     }
