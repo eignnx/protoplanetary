@@ -4,9 +4,13 @@ use bevy::prelude::*;
 use rand::prelude::*;
 
 use crate::{
-    components::{Drag, Force, Mass, Velocity},
+    components::{Force, Mass, Radius, Velocity},
     MouseDot,
 };
+
+use self::collisions::{CollisionGroup, CollisionGroups, CollisionResolutionPlugin};
+
+mod collisions;
 
 #[derive(Resource)]
 pub struct Constants {
@@ -33,22 +37,18 @@ pub struct PlanetsPlugin;
 impl Plugin for PlanetsPlugin {
     fn build(&self, app: &mut App) {
         app // <no autoformat>
-            .register_type::<Drag>()
             .register_type::<Mass>()
+            .register_type::<Radius>()
             .register_type::<Velocity>()
             .register_type::<Force>()
             .add_event::<SpawnPlanetEvent>()
             .init_resource::<Constants>()
+            .add_plugins(CollisionResolutionPlugin)
             .add_systems(Startup, (spawn_planets, spawn_sun))
             .add_systems(PreUpdate, (spawn_planet_system,))
             .add_systems(
                 Update,
-                (
-                    drag_system,
-                    nbody_system,
-                    mouse_attraction_system,
-                    bounds_system,
-                ),
+                (nbody_system, mouse_attraction_system, bounds_system),
             )
             .add_systems(PostUpdate, (physics_system,));
     }
@@ -61,38 +61,45 @@ fn spawn_sun(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let radius: f32 = 3.0 * SUN_MASS.cbrt();
+    let radius: f32 = radius_from_mass(SUN_MASS);
 
     commands
         .spawn((
             PointLightBundle {
                 transform: Transform::from_translation(Vec3::ZERO),
                 point_light: PointLight {
-                    intensity: 1600000.0, // lumens - roughly a 100W non-halogen incandescent bulb
-                    color: Color::rgba_u8(255, 221, 156, 255),
+                    intensity: 10_000_000.0,
+                    range: 10_000.0,
+                    radius: 1.0,
+                    color: Color::ORANGE,
                     shadows_enabled: true,
-                    range: 11000.0,
-                    radius,
                     ..default()
                 },
                 ..default()
             },
             Name::new("Sun"),
             Planet,
+            Radius(radius),
             Mass(SUN_MASS),
             Velocity::ZERO,
             Force::ZERO,
-            // Drag(0.4),
         ))
         .with_children(|builder| {
             builder.spawn(PbrBundle {
-                mesh: meshes.add(shape::UVSphere::default().try_into().unwrap()),
+                mesh: meshes.add(
+                    shape::UVSphere {
+                        radius,
+                        ..default()
+                    }
+                    .try_into()
+                    .unwrap(),
+                ),
                 material: materials.add(StandardMaterial {
-                    base_color: Color::YELLOW,
-                    emissive: Color::WHITE,
+                    base_color: Color::WHITE,
+                    emissive: Color::ORANGE,
                     ..default()
                 }),
-                transform: Transform::from_translation(Vec3::ZERO).with_scale(Vec3::splat(radius)),
+                transform: Transform::from_translation(Vec3::ZERO),
                 ..default()
             });
         });
@@ -105,6 +112,10 @@ pub struct SpawnPlanetEvent {
     pub mass: Option<f32>,
 }
 
+fn radius_from_mass(mass: f32) -> f32 {
+    3.0 * mass.cbrt()
+}
+
 fn spawn_planet_system(
     mut ereader: EventReader<SpawnPlanetEvent>,
     mut commands: Commands,
@@ -112,9 +123,9 @@ fn spawn_planet_system(
     mut materials: ResMut<Assets<StandardMaterial>>,
     constants: Res<Constants>,
 ) {
-    for event in ereader.iter() {
-        let mut rng = thread_rng();
+    let mut rng = thread_rng();
 
+    for event in ereader.iter() {
         let pos = event.pos.unwrap_or_else(|| {
             rng.gen_range(50.0..500.0)
                 * (Quat::from_axis_angle(Vec3::Y, rng.gen_range(0.0..TAU)).mul_vec3(Vec3::X)
@@ -124,7 +135,7 @@ fn spawn_planet_system(
         let mass = event
             .mass
             .unwrap_or_else(|| 50.0 * rng.gen_range(0.0..1.0) + 2.0);
-        let radius: f32 = 3.0 * mass.cbrt();
+        let radius: f32 = radius_from_mass(mass);
 
         let vel = event.vel.unwrap_or_else(|| {
             let orbit_speed =
@@ -149,14 +160,21 @@ fn spawn_planet_system(
         commands.spawn((
             Planet,
             Name::new(format!("Planet (m={mass:.1})")),
+            Radius(radius),
             Mass(mass),
             Velocity(vel),
             Force::ZERO,
-            Drag(0.0),
             PbrBundle {
-                mesh: meshes.add(shape::UVSphere::default().try_into().unwrap()),
+                mesh: meshes.add(
+                    shape::UVSphere {
+                        radius,
+                        ..default()
+                    }
+                    .try_into()
+                    .unwrap(),
+                ),
                 material: materials.add(material),
-                transform: Transform::from_translation(pos).with_scale(Vec3::splat(radius)),
+                transform: Transform::from_translation(pos),
                 ..default()
             },
         ));
@@ -176,12 +194,6 @@ fn physics_system(mut query: Query<(&mut Transform, &mut Velocity, &Mass, &mut F
     }
 }
 
-fn drag_system(mut query: Query<(&mut Velocity, &Drag)>) {
-    for (mut vel, Drag(drag)) in &mut query {
-        vel.0 *= 1.0 - *drag;
-    }
-}
-
 fn attraction_force(
     sat_mass: f32,
     sat_pos: Vec3,
@@ -196,23 +208,66 @@ fn attraction_force(
         / (sat_to_parent.length_squared() + min_dist)
 }
 
-pub fn nbody_system(
-    mut planets_mut: Query<(&Transform, &Mass, &mut Force), With<Planet>>,
+fn nbody_system(
+    mut planets_mut: Query<
+        (Entity, &Transform, &Mass, &Radius, &Velocity, &mut Force),
+        With<Planet>,
+    >,
     constants: Res<Constants>,
+    mut collision_groups: ResMut<CollisionGroups>,
 ) {
     let mut it = planets_mut.iter_combinations_mut();
-    while let Some([(p1_tsf, m1, mut p1_acc), (p2_tsf, m2, mut p2_acc)]) = it.fetch_next() {
-        let (p1_tsl, p2_tsl) = (p1_tsf.translation, p2_tsf.translation);
-        let force = attraction_force(
-            m1.0,
-            p1_tsl,
-            m2.0,
-            p2_tsl,
-            constants.grav_const,
-            constants.min_attraction_dist,
-        );
-        *p1_acc += Force(force / m1.0);
-        *p2_acc -= Force(force / m2.0);
+    while let Some([(e1, tsf1, &m1, &r1, &v1, mut acc1), (e2, tsf2, &m2, &r2, &v2, mut acc2)]) =
+        it.fetch_next()
+    {
+        let (tsl1, tsl2) = (tsf1.translation, tsf2.translation);
+
+        let sat_to_parent = tsl2 - tsl1;
+        let radii_sum = r1.0 + r2.0;
+
+        // Collision detection:
+        if sat_to_parent.length() < radii_sum {
+            use collisions::PlanetInfo;
+
+            let p1 = PlanetInfo {
+                entity: e1,
+                mass: m1,
+                vel: v1,
+            };
+
+            let p2 = PlanetInfo {
+                entity: e2,
+                mass: m2,
+                vel: v2,
+            };
+
+            let (larger, smaller) = if m1.0 > m2.0 { (p1, p2) } else { (p2, p1) };
+
+            collision_groups
+                .map
+                .entry(larger.entity)
+                .or_insert(CollisionGroup {
+                    largest: larger,
+                    members: vec![],
+                })
+                .members
+                .push(smaller);
+
+            // Skip rest of force computation.
+            continue;
+        }
+
+        let force = {
+            let sat_mass = m1.0;
+            let parent_mass = m2.0;
+            let grav_const = constants.grav_const;
+            let min_dist = constants.min_attraction_dist;
+            let toward_parent = sat_to_parent.normalize_or_zero();
+            grav_const * sat_mass * parent_mass * toward_parent
+                / (sat_to_parent.length_squared() + min_dist)
+        };
+        *acc1 += Force(force / m1.0);
+        *acc2 -= Force(force / m2.0);
     }
 }
 

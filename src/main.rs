@@ -51,10 +51,10 @@ fn init_camera(mut commands: Commands) {
             ..default()
         },
         BloomSettings {
-            intensity: 0.25,
-            low_frequency_boost: 1.0,
-            low_frequency_boost_curvature: 0.7,
-            high_pass_frequency: 0.6,
+            intensity: 0.01,
+            low_frequency_boost: 2.0,
+            low_frequency_boost_curvature: 1.0,
+            high_pass_frequency: 100.0,
             composite_mode: BloomCompositeMode::Additive,
             ..default()
         }, // 3. Enable bloom for the camera
