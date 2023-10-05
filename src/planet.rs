@@ -29,9 +29,6 @@ impl Default for Constants {
     }
 }
 
-#[derive(Component)]
-pub struct Planet;
-
 pub struct PlanetsPlugin;
 
 impl Plugin for PlanetsPlugin {
@@ -53,6 +50,9 @@ impl Plugin for PlanetsPlugin {
             .add_systems(PostUpdate, (physics_system,));
     }
 }
+
+#[derive(Component)]
+pub struct Planet;
 
 const SUN_MASS: f32 = 1000.0;
 
@@ -208,11 +208,17 @@ fn attraction_force(
         / (sat_to_parent.length_squared() + min_dist)
 }
 
+type NBodyPlanetsData<'a, 'b, 'c, 'd, 'e> = (
+    Entity,
+    &'a Transform,
+    &'b Mass,
+    &'c Radius,
+    &'d Velocity,
+    &'e mut Force,
+);
+
 fn nbody_system(
-    mut planets_mut: Query<
-        (Entity, &Transform, &Mass, &Radius, &Velocity, &mut Force),
-        With<Planet>,
-    >,
+    mut planets_mut: Query<NBodyPlanetsData, With<Planet>>,
     constants: Res<Constants>,
     mut collision_groups: ResMut<CollisionGroups>,
 ) {

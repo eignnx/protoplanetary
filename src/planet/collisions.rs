@@ -43,20 +43,19 @@ pub struct PlanetInfo {
     pub pos: Vec3,
 }
 
+type CollisionResolutionPlanetsData<'a, 'b, 'c, 'd, 'e> = (
+    Entity,
+    &'a mut Handle<Mesh>,
+    &'b mut Radius,
+    &'c mut Velocity,
+    &'d mut Mass,
+    &'e mut Transform,
+);
+
 fn collision_resolution_system(
     mut commands: Commands,
     mut collision_groups: ResMut<CollisionGroups>,
-    mut q_planets: Query<
-        (
-            Entity,
-            &mut Handle<Mesh>,
-            &mut Radius,
-            &mut Velocity,
-            &mut Mass,
-            &mut Transform,
-        ),
-        With<Planet>,
-    >,
+    mut q_planets: Query<CollisionResolutionPlanetsData, With<Planet>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let mut new_vels = HashMap::new();
