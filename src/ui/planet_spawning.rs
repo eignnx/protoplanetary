@@ -63,111 +63,106 @@ fn planet_spawn_interaction_system(
 ) {
     use PlanetSpawnMode as Mode;
 
-    if state.is_nothing() {
-        return;
-    }
+    match state.as_ref() {
+        Mode::Nothing => (),
 
-    let sun_tsl = q_sun.single().translation;
-
-    if matches!(*state, Mode::EclipticPosSelect) {
-        let Some(mouse_tsl) = mouse_ray.intersect_plane(Vec3::ZERO, Vec3::Y) else {
+        Mode::EclipticPosSelect => {
+            let sun_tsl = q_sun.single().translation;
+            let Some(mouse_tsl) = mouse_ray.intersect_plane(Vec3::ZERO, Vec3::Y) else {
             return;
         };
-        let line_len = (sun_tsl - mouse_tsl).length();
-        gizmos.line(sun_tsl, mouse_tsl, Color::GOLD);
-        gizmos.rect(
-            sun_tsl,
-            Quat::from_rotation_arc(
-                Vec3::new(1.0, 0.0, 1.0).normalize(),
-                mouse_tsl.normalize_or_zero(),
-            )
-            .mul_quat(Quat::from_axis_angle(Vec3::X, TAU / 4.0)),
-            Vec2::splat(SQRT_2 * line_len),
-            Color::GOLD,
-        );
+            let line_len = (sun_tsl - mouse_tsl).length();
+            gizmos.line(sun_tsl, mouse_tsl, Color::CYAN);
+            gizmos.rect(
+                sun_tsl,
+                Quat::from_rotation_arc(
+                    Vec3::new(1.0, 0.0, 1.0).normalize(),
+                    mouse_tsl.normalize_or_zero(),
+                )
+                .mul_quat(Quat::from_axis_angle(Vec3::X, TAU / 4.0)),
+                Vec2::splat(SQRT_2 * line_len),
+                Color::CYAN,
+            );
 
-        if input.just_released(MouseButton::Left) {
-            *state = Mode::HeightSelect {
-                chosen_ecliptic_pos: mouse_tsl,
-            };
+            if input.just_released(MouseButton::Left) {
+                *state = Mode::HeightSelect {
+                    chosen_ecliptic_pos: mouse_tsl,
+                };
+            }
         }
 
-        return;
-    }
-
-    if let &Mode::HeightSelect {
-        chosen_ecliptic_pos,
-    } = state.as_ref()
-    {
-        let cam = q_cam.single();
-        let Some(mouse_tsl) = mouse_ray.intersect_plane(chosen_ecliptic_pos, cam.forward()) else {
+        &Mode::HeightSelect {
+            chosen_ecliptic_pos,
+        } => {
+            let sun_tsl = q_sun.single().translation;
+            let cam = q_cam.single();
+            let Some(mouse_tsl) = mouse_ray.intersect_plane(chosen_ecliptic_pos, cam.forward()) else {
             return;
         };
 
-        let chosen_pos = chosen_ecliptic_pos + mouse_tsl.project_onto(Vec3::Y);
-        gizmos.line(sun_tsl, chosen_ecliptic_pos, Color::CYAN);
-        gizmos.line(sun_tsl, chosen_pos, Color::GOLD);
-        gizmos.line(chosen_ecliptic_pos, chosen_pos, Color::GOLD);
+            let chosen_pos = chosen_ecliptic_pos + mouse_tsl.project_onto(Vec3::Y);
+            gizmos.line(sun_tsl, chosen_ecliptic_pos, Color::GOLD);
+            gizmos.line(sun_tsl, chosen_pos, Color::CYAN);
+            gizmos.line(chosen_ecliptic_pos, chosen_pos, Color::CYAN);
 
-        let line_len = (sun_tsl - chosen_ecliptic_pos).length();
-        gizmos.rect(
-            sun_tsl,
-            Quat::from_rotation_arc(
-                Vec3::new(1.0, 0.0, 1.0).normalize(),
-                chosen_ecliptic_pos.normalize_or_zero(),
-            )
-            .mul_quat(Quat::from_axis_angle(Vec3::X, TAU / 4.0)),
-            Vec2::splat(SQRT_2 * line_len),
-            Color::CYAN,
-        );
+            let line_len = (sun_tsl - chosen_ecliptic_pos).length();
+            gizmos.rect(
+                sun_tsl,
+                Quat::from_rotation_arc(
+                    Vec3::new(1.0, 0.0, 1.0).normalize(),
+                    chosen_ecliptic_pos.normalize_or_zero(),
+                )
+                .mul_quat(Quat::from_axis_angle(Vec3::X, TAU / 4.0)),
+                Vec2::splat(SQRT_2 * line_len),
+                Color::GOLD,
+            );
 
-        if input.just_released(MouseButton::Left) {
-            *state = Mode::RadiusSelect {
-                chosen_ecliptic_pos,
-                chosen_pos,
-            };
+            if input.just_released(MouseButton::Left) {
+                *state = Mode::RadiusSelect {
+                    chosen_ecliptic_pos,
+                    chosen_pos,
+                };
+            }
         }
 
-        return;
-    }
-
-    if let &Mode::RadiusSelect {
-        chosen_ecliptic_pos,
-        chosen_pos,
-    } = state.as_ref()
-    {
-        let cam = q_cam.single();
-        let Some(mouse_tsl) = mouse_ray.intersect_plane(chosen_pos, cam.forward()) else {
+        &Mode::RadiusSelect {
+            chosen_ecliptic_pos,
+            chosen_pos,
+        } => {
+            let sun_tsl = q_sun.single().translation;
+            let cam = q_cam.single();
+            let Some(mouse_tsl) = mouse_ray.intersect_plane(chosen_pos, cam.forward()) else {
             return;
         };
 
-        gizmos.line(sun_tsl, chosen_ecliptic_pos, Color::CYAN);
-        gizmos.line(sun_tsl, chosen_pos, Color::CYAN);
-        gizmos.line(chosen_ecliptic_pos, chosen_pos, Color::CYAN);
+            gizmos.line(sun_tsl, chosen_ecliptic_pos, Color::GOLD);
+            gizmos.line(sun_tsl, chosen_pos, Color::GOLD);
+            gizmos.line(chosen_ecliptic_pos, chosen_pos, Color::GOLD);
 
-        let line_len = (sun_tsl - chosen_ecliptic_pos).length();
-        gizmos.rect(
-            sun_tsl,
-            Quat::from_rotation_arc(
-                Vec3::new(1.0, 0.0, 1.0).normalize(),
-                chosen_ecliptic_pos.normalize_or_zero(),
-            )
-            .mul_quat(Quat::from_axis_angle(Vec3::X, TAU / 4.0)),
-            Vec2::splat(SQRT_2 * line_len),
-            Color::CYAN,
-        );
+            let line_len = (sun_tsl - chosen_ecliptic_pos).length();
+            gizmos.rect(
+                sun_tsl,
+                Quat::from_rotation_arc(
+                    Vec3::new(1.0, 0.0, 1.0).normalize(),
+                    chosen_ecliptic_pos.normalize_or_zero(),
+                )
+                .mul_quat(Quat::from_axis_angle(Vec3::X, TAU / 4.0)),
+                Vec2::splat(SQRT_2 * line_len),
+                Color::GOLD,
+            );
 
-        let radius = (mouse_tsl - chosen_pos).length();
+            let radius = 2.5 * (mouse_tsl - chosen_pos).length().sqrt();
 
-        gizmos.sphere(chosen_pos, Quat::IDENTITY, radius, Color::GOLD);
+            gizmos.sphere(chosen_pos, Quat::IDENTITY, radius, Color::CYAN);
 
-        if input.just_released(MouseButton::Left) {
-            spawn_planet.send(SpawnPlanetEvent {
-                pos: Some(chosen_pos),
-                mass: Some(mass_from_radius(radius)),
-                ..default()
-            });
-            *state = Mode::Nothing;
+            if input.just_released(MouseButton::Left) {
+                spawn_planet.send(SpawnPlanetEvent {
+                    pos: Some(chosen_pos),
+                    mass: Some(mass_from_radius(radius)),
+                    ..default()
+                });
+                *state = Mode::Nothing;
+            }
         }
     }
 }
