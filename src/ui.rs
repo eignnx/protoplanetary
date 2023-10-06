@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, window::PrimaryWindow};
 use bevy_inspector_egui::{
     bevy_egui::{egui, EguiContexts, EguiPlugin},
     egui::{CollapsingHeader, DragValue},
@@ -6,7 +6,14 @@ use bevy_inspector_egui::{
 };
 use rand::Rng;
 
-use crate::planet::{Constants, SpawnPlanetEvent};
+use crate::{
+    planet::{Constants, SpawnPlanetEvent},
+    MainCamera,
+};
+
+use self::planet_spawning::{PlanetSpawnMode, PlanetSpawningPlugin};
+
+mod planet_spawning;
 
 pub struct MyUiPlugin;
 
@@ -36,9 +43,12 @@ impl Plugin for MyUiPlugin {
             .add_plugins((
                 EguiPlugin,
                 WorldInspectorPlugin::new().run_if(world_inspector_open),
+                PlanetSpawningPlugin,
             ))
             .insert_resource(UiState::default())
-            .add_systems(Update, root_ui_system);
+            .insert_resource(MouseRay::default())
+            .add_systems(Update, (mouse_ray_update_system,))
+            .add_systems(Update, (root_ui_system,));
     }
 }
 
@@ -52,6 +62,7 @@ fn root_ui_system(
     input: Res<Input<KeyCode>>,
     mut constants: ResMut<Constants>,
     mut ewriter: EventWriter<SpawnPlanetEvent>,
+    mut planet_spawn_mode: ResMut<PlanetSpawnMode>,
 ) {
     if input.just_pressed(KeyCode::W) {
         state.world_inspector_open = !state.world_inspector_open;
@@ -89,25 +100,8 @@ fn root_ui_system(
             CollapsingHeader::new("Spawn Planet")
                 .default_open(true)
                 .show(ui, |ui| {
-                    ui.label("Position");
-
-                    ui.add(
-                        DragValue::new(&mut state.new_planet_pos.x)
-                            .speed(0.1)
-                            .prefix("x: "),
-                    );
-                    ui.add(
-                        DragValue::new(&mut state.new_planet_pos.y)
-                            .speed(0.1)
-                            .prefix("y: "),
-                    );
-                    ui.add(
-                        DragValue::new(&mut state.new_planet_pos.z)
-                            .speed(0.1)
-                            .prefix("z: "),
-                    );
-
-                    if ui.small_button("Randomize").clicked() {
+                    if ui.small_button("Spawn Random").clicked() || input.just_released(KeyCode::R)
+                    {
                         let mut rng = rand::thread_rng();
                         state.new_planet_pos = rng.gen_range(50.0..600.0)
                             * Vec3::new(
@@ -116,13 +110,25 @@ fn root_ui_system(
                                 rng.gen_range(-1.0..1.0),
                             )
                             .normalize_or_zero();
-                    }
-
-                    if ui.button("Spawn Planet").clicked() {
                         ewriter.send(SpawnPlanetEvent {
                             pos: Some(state.new_planet_pos),
                             ..default()
                         });
+                    }
+
+                    if input.just_pressed(KeyCode::Escape) {
+                        planet_spawn_mode.go_back();
+                    }
+
+                    if ui
+                        .add_enabled(
+                            planet_spawn_mode.is_nothing(),
+                            egui::Button::new("Spawn At Mouse"),
+                        )
+                        .clicked()
+                        || input.just_released(KeyCode::S)
+                    {
+                        *planet_spawn_mode = PlanetSpawnMode::EclipticPosSelect;
                     }
                 });
 
@@ -172,5 +178,37 @@ fn root_ui_system(
                     });
                 });
         },
+    );
+}
+
+#[derive(Resource, Default)]
+pub struct MouseRay(pub Option<Ray>);
+
+impl MouseRay {
+    pub fn intersect_plane(&self, plane_origin: Vec3, plane_normal: Vec3) -> Option<Vec3> {
+        let ray = self.0?;
+        let dist_along_ray = ray.intersect_plane(plane_origin, plane_normal)?;
+        Some(ray.get_point(dist_along_ray))
+    }
+}
+
+fn mouse_ray_update_system(
+    mut mouse_ray: ResMut<MouseRay>,
+    q_windows: Query<&Window, With<PrimaryWindow>>,
+    camera_q: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+) {
+    // get the camera info and transform
+    // assuming there is exactly one main camera entity, so query::single() is OK
+    let (camera, camera_transform) = camera_q.single();
+
+    // get the window that the camera is displaying to (or the primary window)
+    let window = q_windows.single();
+
+    // check if the cursor is inside the window and get its position
+    // then, ask bevy to convert into world coordinates.
+    *mouse_ray = MouseRay(
+        window
+            .cursor_position()
+            .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor)),
     );
 }

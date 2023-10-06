@@ -3,10 +3,7 @@ use std::f32::consts::TAU;
 use bevy::prelude::*;
 use rand::prelude::*;
 
-use crate::{
-    components::{Force, Mass, Radius, Velocity},
-    MouseDot,
-};
+use crate::components::{Force, Mass, Radius, Velocity};
 
 use self::collisions::{CollisionGroup, CollisionGroups, CollisionResolutionPlugin};
 
@@ -43,13 +40,16 @@ impl Plugin for PlanetsPlugin {
             .add_plugins(CollisionResolutionPlugin)
             .add_systems(Startup, (spawn_planets, spawn_sun))
             .add_systems(PreUpdate, (spawn_planet_system,))
-            .add_systems(Update, (nbody_system, mouse_attraction_system))
+            .add_systems(Update, (nbody_system,))
             .add_systems(PostUpdate, (physics_system,));
     }
 }
 
 #[derive(Component)]
 pub struct Planet;
+
+#[derive(Component)]
+pub struct Sun;
 
 const SUN_MASS: f32 = 1000.0;
 
@@ -74,8 +74,9 @@ fn spawn_sun(
                 },
                 ..default()
             },
-            Name::new("Sun"),
+            Sun,
             Planet,
+            Name::new("Sun"),
             Radius(radius),
             Mass(SUN_MASS),
             Velocity::ZERO,
@@ -262,25 +263,5 @@ fn nbody_system(
         };
         *acc1 += Force(force / m1.0);
         *acc2 -= Force(force / m2.0);
-    }
-}
-
-pub fn mouse_attraction_system(
-    mouse_input: Res<Input<MouseButton>>,
-    mut q_planets: Query<(&Transform, &Mass, &mut Force), With<Planet>>,
-    q_mouse: Query<&Transform, With<MouseDot>>,
-    constants: Res<Constants>,
-) {
-    if !mouse_input.pressed(MouseButton::Left) {
-        return;
-    }
-
-    let mouse_tsl = q_mouse.single().translation;
-
-    for (planet_tsf, &Mass(mass), mut net_force) in &mut q_planets {
-        let planet_tsl = planet_tsf.translation;
-        let r = mouse_tsl - planet_tsl;
-        let k = constants.mouse_spring_strength;
-        *net_force += Force(k * mass * r);
     }
 }
