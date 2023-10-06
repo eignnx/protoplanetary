@@ -3,7 +3,7 @@ use std::f32::consts::{SQRT_2, TAU};
 use bevy::prelude::*;
 
 use crate::{
-    planet::{SpawnPlanetEvent, Sun},
+    planet::{mass_from_radius, SpawnPlanetEvent, Sun},
     MainCamera,
 };
 
@@ -23,7 +23,13 @@ impl Plugin for PlanetSpawningPlugin {
 pub enum PlanetSpawnMode {
     Nothing,
     EclipticPosSelect,
-    HeightSelect { chosen_ecliptic_pos: Vec3 },
+    HeightSelect {
+        chosen_ecliptic_pos: Vec3,
+    },
+    RadiusSelect {
+        chosen_ecliptic_pos: Vec3,
+        chosen_pos: Vec3,
+    },
 }
 
 impl PlanetSpawnMode {
@@ -36,6 +42,12 @@ impl PlanetSpawnMode {
             Self::Nothing => Self::Nothing,
             Self::EclipticPosSelect => Self::Nothing,
             Self::HeightSelect { .. } => Self::EclipticPosSelect,
+            Self::RadiusSelect {
+                chosen_ecliptic_pos,
+                ..
+            } => Self::HeightSelect {
+                chosen_ecliptic_pos,
+            },
         };
     }
 }
@@ -93,25 +105,66 @@ fn planet_spawn_interaction_system(
         };
 
         let chosen_pos = chosen_ecliptic_pos + mouse_tsl.project_onto(Vec3::Y);
-        gizmos.line(sun_tsl, chosen_ecliptic_pos, Color::GOLD);
+        gizmos.line(sun_tsl, chosen_ecliptic_pos, Color::CYAN);
         gizmos.line(sun_tsl, chosen_pos, Color::GOLD);
         gizmos.line(chosen_ecliptic_pos, chosen_pos, Color::GOLD);
 
-        // gizmos.rect(
-        //     sun_tsl,
-        //     Quat::IDENTITY
-        //         .mul_quat(Quat::from_axis_angle(
-        //             Vec3::Y,
-        //             chosen_pos.reject_from(Vec3::Y).angle_between(Vec3::X),
-        //         ))
-        //         .mul_quat(Quat::from_axis_angle(Vec3::X, TAU / 4.0)),
-        //     Vec2::splat(SQRT_2 * (sun_tsl - chosen_pos).length()),
-        //     Color::GOLD,
-        // );
+        let line_len = (sun_tsl - chosen_ecliptic_pos).length();
+        gizmos.rect(
+            sun_tsl,
+            Quat::from_rotation_arc(
+                Vec3::new(1.0, 0.0, 1.0).normalize(),
+                chosen_ecliptic_pos.normalize_or_zero(),
+            )
+            .mul_quat(Quat::from_axis_angle(Vec3::X, TAU / 4.0)),
+            Vec2::splat(SQRT_2 * line_len),
+            Color::CYAN,
+        );
+
+        if input.just_released(MouseButton::Left) {
+            *state = Mode::RadiusSelect {
+                chosen_ecliptic_pos,
+                chosen_pos,
+            };
+        }
+
+        return;
+    }
+
+    if let &Mode::RadiusSelect {
+        chosen_ecliptic_pos,
+        chosen_pos,
+    } = state.as_ref()
+    {
+        let cam = q_cam.single();
+        let Some(mouse_tsl) = mouse_ray.intersect_plane(chosen_pos, cam.forward()) else {
+            return;
+        };
+
+        gizmos.line(sun_tsl, chosen_ecliptic_pos, Color::CYAN);
+        gizmos.line(sun_tsl, chosen_pos, Color::CYAN);
+        gizmos.line(chosen_ecliptic_pos, chosen_pos, Color::CYAN);
+
+        let line_len = (sun_tsl - chosen_ecliptic_pos).length();
+        gizmos.rect(
+            sun_tsl,
+            Quat::from_rotation_arc(
+                Vec3::new(1.0, 0.0, 1.0).normalize(),
+                chosen_ecliptic_pos.normalize_or_zero(),
+            )
+            .mul_quat(Quat::from_axis_angle(Vec3::X, TAU / 4.0)),
+            Vec2::splat(SQRT_2 * line_len),
+            Color::CYAN,
+        );
+
+        let radius = (mouse_tsl - chosen_pos).length();
+
+        gizmos.sphere(chosen_pos, Quat::IDENTITY, radius, Color::GOLD);
 
         if input.just_released(MouseButton::Left) {
             spawn_planet.send(SpawnPlanetEvent {
                 pos: Some(chosen_pos),
+                mass: Some(mass_from_radius(radius)),
                 ..default()
             });
             *state = Mode::Nothing;

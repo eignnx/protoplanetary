@@ -110,8 +110,12 @@ pub struct SpawnPlanetEvent {
     pub mass: Option<f32>,
 }
 
-fn radius_from_mass(mass: f32) -> f32 {
+pub fn radius_from_mass(mass: f32) -> f32 {
     3.0 * mass.cbrt()
+}
+
+pub fn mass_from_radius(radius: f32) -> f32 {
+    (radius / 3.0).powi(3)
 }
 
 fn spawn_planet_system(
