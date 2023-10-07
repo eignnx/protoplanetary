@@ -39,9 +39,8 @@ impl Plugin for PlanetsPlugin {
             .init_resource::<Constants>()
             .add_plugins(CollisionResolutionPlugin)
             .add_systems(Startup, (spawn_planets, spawn_sun))
-            .add_systems(PreUpdate, (spawn_planet_system,))
             .add_systems(Update, (nbody_system,))
-            .add_systems(PostUpdate, (physics_system,));
+            .add_systems(PostUpdate, (physics_system, spawn_planet_system));
     }
 }
 
@@ -65,7 +64,7 @@ fn spawn_sun(
             PointLightBundle {
                 transform: Transform::from_translation(Vec3::ZERO),
                 point_light: PointLight {
-                    intensity: 10_000_000.0,
+                    intensity: 50_000_000.0,
                     range: 10_000.0,
                     radius: 3.0,
                     color: Color::ORANGE,
@@ -93,8 +92,8 @@ fn spawn_sun(
                     .unwrap(),
                 ),
                 material: materials.add(StandardMaterial {
-                    base_color: Color::WHITE,
-                    emissive: Color::ORANGE,
+                    base_color: Color::lch(1.0, 0.15, 50.0),
+                    emissive: Color::lch(1.5, 0.05, 74.0),
                     ..default()
                 }),
                 transform: Transform::from_translation(Vec3::ZERO),
@@ -193,7 +192,8 @@ fn physics_system(
 ) {
     let dt = time.delta_seconds();
     for (mut pos, mut vel, mass, mut net_force) in &mut query {
-        vel.0 += net_force.0 / mass.0 * dt;
+        let acc = net_force.0 / mass.0;
+        vel.0 += acc * dt;
         pos.translation += vel.0 * dt;
         *net_force = Force::ZERO;
     }

@@ -61,7 +61,7 @@ fn root_ui_system(
     mut state: ResMut<UiState>,
     input: Res<Input<KeyCode>>,
     mut constants: ResMut<Constants>,
-    mut ewriter: EventWriter<SpawnPlanetEvent>,
+    mut spawn_events: EventWriter<SpawnPlanetEvent>,
     mut planet_spawn_mode: ResMut<PlanetSpawnMode>,
 ) {
     if input.just_pressed(KeyCode::W) {
@@ -72,6 +72,14 @@ fn root_ui_system(
         state.right_panel_open = !state.right_panel_open;
     }
 
+    if input.just_pressed(KeyCode::R) {
+        spawn_events.send(SpawnPlanetEvent::default());
+    }
+
+    if input.just_pressed(KeyCode::S) {
+        *planet_spawn_mode = PlanetSpawnMode::EclipticPosSelect;
+    }
+
     egui::containers::SidePanel::right("my_side_panel").show_animated(
         contexts.ctx_mut(),
         state.right_panel_open,
@@ -79,12 +87,12 @@ fn root_ui_system(
             ui.heading("Dev Menu");
             ui.separator();
 
-            if ui.button("Close Thi Panel").clicked() {
+            if ui.button("Close This [P]anel").clicked() {
                 state.right_panel_open = false;
             }
 
             ui.horizontal(|ui| {
-                ui.label("World Inspector Window");
+                ui.label("[W]orld Inspector Window");
                 let txt = if state.world_inspector_open {
                     "Close"
                 } else {
@@ -100,7 +108,8 @@ fn root_ui_system(
             CollapsingHeader::new("Spawn Planet")
                 .default_open(true)
                 .show(ui, |ui| {
-                    if ui.small_button("Spawn Random").clicked() || input.just_released(KeyCode::R)
+                    if ui.small_button("Spawn [R]andom").clicked()
+                        || input.just_released(KeyCode::R)
                     {
                         let mut rng = rand::thread_rng();
                         state.new_planet_pos = rng.gen_range(50.0..600.0)
@@ -110,7 +119,7 @@ fn root_ui_system(
                                 rng.gen_range(-1.0..1.0),
                             )
                             .normalize_or_zero();
-                        ewriter.send(SpawnPlanetEvent {
+                        spawn_events.send(SpawnPlanetEvent {
                             pos: Some(state.new_planet_pos),
                             ..default()
                         });
@@ -123,10 +132,9 @@ fn root_ui_system(
                     if ui
                         .add_enabled(
                             planet_spawn_mode.is_nothing(),
-                            egui::Button::new("Spawn At Mouse"),
+                            egui::Button::new("[S]pawn At Mouse"),
                         )
                         .clicked()
-                        || input.just_released(KeyCode::S)
                     {
                         *planet_spawn_mode = PlanetSpawnMode::EclipticPosSelect;
                     }

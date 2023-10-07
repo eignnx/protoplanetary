@@ -41,13 +41,13 @@ fn init_camera(mut commands: Commands) {
                 hdr: true, // 1. HDR is required for bloom
                 ..default()
             },
-            tonemapping: Tonemapping::TonyMcMapface, // 2. Using a tonemapper that desaturates to white is recommended
-            transform: Transform::from_xyz(0.0, 100.0, 1000.0)
+            tonemapping: Tonemapping::AcesFitted, // 2. Using a tonemapper that desaturates to white is recommended
+            transform: Transform::from_xyz(0.0, 200.0, 1000.0)
                 .looking_at(Vec3::splat(0.0), Vec3::Y),
             ..default()
         },
         BloomSettings {
-            intensity: 0.01,
+            intensity: 0.025,
             low_frequency_boost: 2.0,
             low_frequency_boost_curvature: 1.0,
             high_pass_frequency: 100.0,
