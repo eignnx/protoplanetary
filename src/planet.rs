@@ -265,7 +265,7 @@ fn nbody_system(
             grav_const * sat_mass * parent_mass * toward_parent
                 / (sat_to_parent.length_squared() + min_dist)
         };
-        *acc1 += Force(force / m1.0);
-        *acc2 -= Force(force / m2.0);
+        *acc1 += Force(force);
+        *acc2 -= Force(force);
     }
 }
