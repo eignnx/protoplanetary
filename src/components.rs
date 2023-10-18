@@ -105,7 +105,18 @@ macro_rules! impl_vector {
     };
 }
 
-#[derive(Component, Resource, Default, Reflect, InspectorOptions, Debug, Clone, Copy)]
+#[derive(
+    Component,
+    Resource,
+    Default,
+    Reflect,
+    InspectorOptions,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    PartialOrd,
+)]
 #[reflect(Resource, InspectorOptions)]
 pub struct Mass(#[inspector(min = 0.0)] pub f32);
 

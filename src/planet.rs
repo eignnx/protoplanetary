@@ -240,7 +240,7 @@ fn nbody_system(
                 pos: tsl2,
             };
 
-            let (larger, smaller) = if m1.0 > m2.0 { (p1, p2) } else { (p2, p1) };
+            let (larger, smaller) = if m1 > m2 { (p1, p2) } else { (p2, p1) };
 
             collision_groups
                 .map
