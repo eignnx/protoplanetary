@@ -58,9 +58,14 @@ macro_rules! impl_add_sub_for {
 }
 
 macro_rules! impl_binop {
-    ($Lhs:ty {$op:tt} $Rhs:ty = $Output:ty) => {
-        impl_binop_with!($Lhs {$op} $Rhs = $Output {
+    ($Lhs:ty {*} $Rhs:ty = $Output:ty) => {
+        impl_binop_with!($Lhs {*} $Rhs = $Output {
             |a: $Lhs, b: $Rhs| (a.0 * b.0).into()
+        });
+    };
+    ($Lhs:ty {/} $Rhs:ty = $Output:ty) => {
+        impl_binop_with!($Lhs {/} $Rhs = $Output {
+            |a: $Lhs, b: $Rhs| (a.0 / b.0).into()
         });
     };
 }
