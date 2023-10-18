@@ -3,6 +3,7 @@ use std::f32::consts::{SQRT_2, TAU};
 use bevy::prelude::*;
 
 use crate::{
+    components::Radius,
     planet::{mass_from_radius, SpawnPlanetEvent, Sun},
     MainCamera,
 };
@@ -151,9 +152,9 @@ fn planet_spawn_interaction_system(
                 Color::GOLD,
             );
 
-            let radius = 2.5 * (mouse_tsl - chosen_pos).length().sqrt();
+            let radius = Radius(2.5 * (mouse_tsl - chosen_pos).length().sqrt());
 
-            gizmos.sphere(chosen_pos, Quat::IDENTITY, radius, Color::CYAN);
+            gizmos.sphere(chosen_pos, Quat::IDENTITY, radius.0, Color::CYAN);
 
             if input.just_released(MouseButton::Left) {
                 spawn_planet.send(SpawnPlanetEvent {

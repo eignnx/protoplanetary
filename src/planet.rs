@@ -3,7 +3,7 @@ use std::f32::consts::TAU;
 use bevy::prelude::*;
 use rand::prelude::*;
 
-use crate::components::{Force, Mass, Radius, Velocity};
+use crate::components::{self, Force, Mass, Radius, Velocity};
 
 use self::collisions::{CollisionGroup, CollisionGroups, CollisionResolutionPlugin};
 
@@ -50,14 +50,14 @@ pub struct Planet;
 #[derive(Component)]
 pub struct Sun;
 
-const SUN_MASS: f32 = 1000.0;
+const SUN_MASS: Mass = Mass(1000.0);
 
 fn spawn_sun(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let radius: f32 = radius_from_mass(SUN_MASS);
+    let radius = radius_from_mass(SUN_MASS);
 
     commands
         .spawn((
@@ -76,8 +76,8 @@ fn spawn_sun(
             Sun,
             Planet,
             Name::new("Sun"),
-            Radius(radius),
-            Mass(SUN_MASS),
+            radius,
+            SUN_MASS,
             Velocity::ZERO,
             Force::ZERO,
         ))
@@ -85,7 +85,7 @@ fn spawn_sun(
             builder.spawn(PbrBundle {
                 mesh: meshes.add(
                     shape::UVSphere {
-                        radius,
+                        radius: radius.0,
                         ..default()
                     }
                     .try_into()
@@ -105,16 +105,16 @@ fn spawn_sun(
 #[derive(Event, Default, Clone, Copy)]
 pub struct SpawnPlanetEvent {
     pub pos: Option<Vec3>,
-    pub vel: Option<Vec3>,
-    pub mass: Option<f32>,
+    pub vel: Option<Velocity>,
+    pub mass: Option<Mass>,
 }
 
-pub fn radius_from_mass(mass: f32) -> f32 {
-    3.0 * mass.cbrt()
+pub fn radius_from_mass(mass: Mass) -> Radius {
+    Radius(3.0 * mass.0.cbrt())
 }
 
-pub fn mass_from_radius(radius: f32) -> f32 {
-    (radius / 3.0).powi(3)
+pub fn mass_from_radius(radius: Radius) -> Mass {
+    Mass((radius.0 / 3.0).powi(3))
 }
 
 fn spawn_planet_system(
@@ -135,12 +135,12 @@ fn spawn_planet_system(
 
         let mass = event
             .mass
-            .unwrap_or_else(|| 50.0 * rng.gen_range(0.0..1.0) + 2.0);
-        let radius: f32 = radius_from_mass(mass);
+            .unwrap_or_else(|| Mass(50.0 * rng.gen_range(0.0..1.0) + 2.0));
+        let radius = radius_from_mass(mass);
 
         let vel = event.vel.unwrap_or_else(|| {
-            let orbit_speed = f32::sqrt(constants.grav_const * SUN_MASS * pos.length_recip());
-            -orbit_speed * pos.normalize().cross(Vec3::Y)
+            let orbit_speed = f32::sqrt(constants.grav_const * SUN_MASS.0 * pos.length_recip());
+            Velocity(-orbit_speed * pos.normalize().cross(Vec3::Y))
         });
 
         let material = StandardMaterial {
@@ -159,15 +159,15 @@ fn spawn_planet_system(
 
         commands.spawn((
             Planet,
-            Name::new(format!("Planet (m={mass:.1})")),
-            Radius(radius),
-            Mass(mass),
-            Velocity(vel),
+            Name::new(format!("Planet (m={:.1})", mass.0)),
+            radius,
+            mass,
+            vel,
             Force::ZERO,
             PbrBundle {
                 mesh: meshes.add(
                     shape::UVSphere {
-                        radius,
+                        radius: radius.0,
                         ..default()
                     }
                     .try_into()
@@ -190,11 +190,11 @@ fn physics_system(
     mut query: Query<(&mut Transform, &mut Velocity, &Mass, &mut Force)>,
     time: Res<Time>,
 ) {
-    let dt = time.delta_seconds();
+    let dt = components::Time(time.delta_seconds());
     for (mut pos, mut vel, mass, mut net_force) in &mut query {
-        let acc = net_force.0 / mass.0;
-        vel.0 += acc * dt;
-        pos.translation += vel.0 * dt;
+        let acc = *net_force / *mass;
+        *vel += acc * dt;
+        pos.translation += *vel * dt;
         *net_force = Force::ZERO;
     }
 }
@@ -214,16 +214,16 @@ fn nbody_system(
     mut collision_groups: ResMut<CollisionGroups>,
 ) {
     let mut it = planets_mut.iter_combinations_mut();
-    while let Some([(e1, tsf1, &m1, &r1, &v1, mut acc1), (e2, tsf2, &m2, &r2, &v2, mut acc2)]) =
+    while let Some([(e1, tsf1, &m1, &r1, &v1, mut f_net1), (e2, tsf2, &m2, &r2, &v2, mut f_net2)]) =
         it.fetch_next()
     {
         let (tsl1, tsl2) = (tsf1.translation, tsf2.translation);
 
         let sat_to_parent = tsl2 - tsl1;
-        let radii_sum = r1.0 + r2.0;
+        let radii_sum = r1 + r2;
 
         // Collision detection:
-        if sat_to_parent.length() < radii_sum {
+        if sat_to_parent.length_squared() < radii_sum.0 * radii_sum.0 {
             use collisions::PlanetInfo;
 
             let p1 = PlanetInfo {
@@ -261,11 +261,14 @@ fn nbody_system(
             let parent_mass = m2.0;
             let grav_const = constants.grav_const;
             let min_dist = constants.min_attraction_dist;
+            let min_dist_sq = min_dist * min_dist;
             let toward_parent = sat_to_parent.normalize_or_zero();
-            grav_const * sat_mass * parent_mass * toward_parent
-                / (sat_to_parent.length_squared() + min_dist)
+            let r_sq = sat_to_parent.length_squared();
+
+            grav_const * sat_mass * parent_mass * toward_parent / r_sq.max(min_dist_sq)
         };
-        *acc1 += Force(force);
-        *acc2 -= Force(force);
+
+        *f_net1 += Force(force);
+        *f_net2 -= Force(force);
     }
 }

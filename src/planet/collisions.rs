@@ -4,7 +4,7 @@ use bevy::{
 };
 
 use crate::{
-    components::{Mass, Radius, Velocity},
+    components::{Mass, Moment, Momentum, Radius, Velocity},
     planet::radius_from_mass,
 };
 
@@ -65,16 +65,16 @@ fn collision_resolution_system(
 
         let total_momentum = group
             .iter_all_planets()
-            .map(|p| p.mass.0 * p.vel.0)
-            .sum::<Vec3>();
+            .map(|p| p.mass * p.vel)
+            .sum::<Momentum>();
 
         let center_of_mass = group
             .iter_all_planets()
-            .map(|g| g.pos * g.mass.0)
-            .sum::<Vec3>()
-            / total_mass.0;
+            .map(|g| g.pos * g.mass)
+            .sum::<Moment>()
+            / total_mass;
 
-        let new_v = total_momentum / total_mass.0;
+        let new_v = total_momentum / total_mass;
         new_phys_state.insert(group.largest.entity, (total_mass, new_v, center_of_mass));
 
         // Despawn all the group members (excluding `largest`).
@@ -85,9 +85,9 @@ fn collision_resolution_system(
 
     for (e, mut mesh, mut rad, mut vel, mut mass, mut tsf) in q_planets.iter_mut() {
         if let Some((new_m, new_v, center_of_mass)) = new_phys_state.get(&e) {
-            *vel = Velocity(*new_v);
+            *vel = *new_v;
             *mass = *new_m;
-            *rad = Radius(radius_from_mass(mass.0));
+            *rad = radius_from_mass(*mass);
             tsf.translation = *center_of_mass;
 
             *mesh = meshes.set(

@@ -133,6 +133,7 @@ pub struct Moment(pub Vec3);
 
 impl_vector!(Moment);
 impl_binop_with!(Mass {*} Vec3 = Moment { |a: Mass, b: Vec3| Moment(a.0 * b) });
+impl_binop_with!(Vec3 {*} Mass = Moment { |a: Vec3, b: Mass| Moment(a * b.0) });
 impl_binop_with!(Moment {/} Mass = Vec3 { |a: Moment, b: Mass| a.0 / b.0 });
 
 #[derive(Component, Resource, Default, Reflect, InspectorOptions, Clone, Copy)]
